@@ -5,30 +5,59 @@ import { useRouter } from 'next/navigation'
 
 export function LoginForm({
   sessionExpired = false,
+  devBypassEnabled = false,
 }: {
   sessionExpired?: boolean
+  devBypassEnabled?: boolean
 }) {
   const router = useRouter()
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState<'signin' | 'bypass' | null>(null)
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setLoading(true)
+    setLoading('signin')
     setError('')
     const form = new FormData(event.currentTarget)
     const result = await authClient.signIn.username({
       username: String(form.get('username') ?? '').trim(),
       password: String(form.get('password') ?? ''),
     })
-    setLoading(false)
+    setLoading(null)
     if (result.error) setError('Invalid username or password.')
     else router.push('/')
   }
+
+  async function bypass() {
+    setLoading('bypass')
+    setError('')
+    const response = await fetch('/api/auth/dev-login-bypass', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    setLoading(null)
+    if (!response.ok) setError('Development bypass is unavailable.')
+    else router.push('/')
+  }
+
   return (
     <main className="auth-page">
       <form className="auth-card" onSubmit={submit}>
         <span className="mark">F</span>
-        <h1>Sign in to Fitara Work</h1>
+        <div className="auth-title-row">
+          <h1>Sign in to Fitara Work</h1>
+          {devBypassEnabled && (
+            <button
+              className="auth-bypass-button"
+              type="button"
+              disabled={loading !== null}
+              onClick={bypass}
+            >
+              {loading === 'bypass' ? 'Bypassing…' : 'Bypass'}
+            </button>
+          )}
+        </div>
         <p>Use your workspace username and password.</p>
         {sessionExpired && (
           <div className="error-banner" role="status">
@@ -62,8 +91,8 @@ export function LoginForm({
             required
           />
         </label>
-        <button className="new-button" disabled={loading}>
-          {loading ? 'Signing in…' : 'Sign in'}
+        <button className="new-button" disabled={loading !== null}>
+          {loading === 'signin' ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
     </main>

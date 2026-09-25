@@ -24,6 +24,7 @@ type Ref = {
   key?: string
   color?: string
   position?: number
+  jobTitle?: string
 }
 type Boot = {
   actor: {
@@ -38,6 +39,14 @@ type Boot = {
   labels: Ref[]
   members: Ref[]
 }
+type Filters = {
+  q: string
+  status: string
+  project: string
+  assignee: string
+  reporter: string
+  blocked: string
+}
 export type Ticket = {
   id: string
   identifier: string
@@ -47,13 +56,74 @@ export type Ticket = {
   priority: string
   statusId: string
   projectId: string
+  reporterMembershipId: string
   assigneeMembershipId: string | null
   position: number
   blocked: boolean
+  acceptanceCriteria: string
+  comments: string
+  subtasks: string
+  dependencies: string
+  attachments: string
+  githubDevelopment: string
   dueDate: string | null
   version: number
   labels: Ref[]
   activity?: { id: string; action: string; createdAt: string }[]
+}
+export type TicketScope = 'open' | 'assigned' | 'review' | 'blocked'
+
+const scopeCopy: Record<TicketScope, { label: string; description: string }> = {
+  open: {
+    label: 'Open tickets',
+    description: 'Tickets across active projects that are not done.',
+  },
+  assigned: {
+    label: 'Assigned to you',
+    description: 'Tickets currently assigned to your workspace membership.',
+  },
+  review: {
+    label: 'Needs review',
+    description: 'Tickets waiting for review and feedback.',
+  },
+  blocked: {
+    label: 'Blocked',
+    description: 'Blocked tickets that need attention.',
+  },
+}
+const defaultTheme = {
+  primary: '#6957e8',
+  secondary: '#101823',
+  background: '#f7f8fb',
+}
+const ticketDetailFields = [
+  { key: 'acceptanceCriteria', label: 'Acceptance criteria' },
+  { key: 'comments', label: 'Comments' },
+  { key: 'subtasks', label: 'Subtasks' },
+  { key: 'dependencies', label: 'Dependencies' },
+  { key: 'attachments', label: 'Attachments' },
+  { key: 'githubDevelopment', label: 'GitHub development' },
+] as const
+
+function matchesScope(t: Ticket, scope: TicketScope, boot: Boot) {
+  if (scope === 'open') return t.statusId !== boot.statuses[3]?.id
+  if (scope === 'assigned')
+    return t.assigneeMembershipId === boot.actor.membershipId
+  if (scope === 'review') return t.statusId === boot.statuses[2]?.id
+  return t.blocked
+}
+function memberFor(boot: Boot, membershipId: string | null) {
+  return membershipId
+    ? boot.members.find((member) => member.id === membershipId)
+    : undefined
+}
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
 }
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init),
@@ -74,21 +144,24 @@ const I = ({ children }: { children: string }) => (
     {children}
   </span>
 )
-export function WorkspaceApp() {
+export function WorkspaceApp({ ticketScope }: { ticketScope?: TicketScope }) {
   const router = useRouter()
   const [boot, setBoot] = useState<Boot>(),
     [tickets, setTickets] = useState<Ticket[]>([]),
-    [view, setView] = useState<'board' | 'list'>('board'),
+    [view, setView] = useState<'board' | 'list'>(
+      ticketScope ? 'list' : 'board',
+    ),
     [ticket, setTicket] = useState<Ticket>(),
     [create, setCreate] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState('')
-  const [f, setF] = useState({
+  const [f, setF] = useState<Filters>({
     q: '',
-    project: '',
     status: '',
-    priority: '',
-    mine: false,
+    project: '',
+    assignee: '',
+    reporter: '',
+    blocked: '',
   })
   const trigger = useRef<HTMLElement | null>(null)
   const load = useCallback(async () => {
@@ -118,9 +191,16 @@ export function WorkspaceApp() {
   useEffect(() => {
     void Promise.resolve().then(load)
   }, [load])
+  const scopedTickets = useMemo(
+    () =>
+      ticketScope && boot
+        ? tickets.filter((t) => matchesScope(t, ticketScope, boot))
+        : tickets,
+    [tickets, ticketScope, boot],
+  )
   const shown = useMemo(
     () =>
-      tickets.filter(
+      scopedTickets.filter(
         (t) =>
           (!f.q ||
             `${t.identifier} ${t.title} ${t.description}`
@@ -128,10 +208,11 @@ export function WorkspaceApp() {
               .includes(f.q.toLowerCase())) &&
           (!f.project || t.projectId === f.project) &&
           (!f.status || t.statusId === f.status) &&
-          (!f.priority || t.priority === f.priority) &&
-          (!f.mine || t.assigneeMembershipId === boot?.actor.membershipId),
+          (!f.assignee || t.assigneeMembershipId === f.assignee) &&
+          (!f.reporter || t.reporterMembershipId === f.reporter) &&
+          (!f.blocked || String(t.blocked) === f.blocked),
       ),
-    [tickets, f, boot],
+    [scopedTickets, f],
   )
   const open = async (t: Ticket, e?: React.MouseEvent) => {
     trigger.current = e?.currentTarget as HTMLElement
@@ -184,13 +265,29 @@ export function WorkspaceApp() {
   if (!boot) return <State title="Demo unavailable" body={error} retry={load} />
   return (
     <div className="app-shell">
-      <Sidebar boot={boot} tickets={tickets} />
+      <Sidebar boot={boot} tickets={tickets} filters={f} setFilters={setF} />
       <main className="workspace-main">
         <header className="topbar">
           <div>
-            <span className="eyebrow">MY WORK / OVERVIEW</span>
-            <h1>Your work, in focus.</h1>
-            <p>Track the tickets that need your attention across Fitara.</p>
+            {ticketScope && (
+              <Link className="overview-link" href="/">
+                ← Overview
+              </Link>
+            )}
+            <span className="eyebrow">
+              MY WORK /{' '}
+              {ticketScope ? scopeCopy[ticketScope].label : 'OVERVIEW'}
+            </span>
+            <h1>
+              {ticketScope
+                ? scopeCopy[ticketScope].label
+                : 'Your work, in focus.'}
+            </h1>
+            <p>
+              {ticketScope
+                ? scopeCopy[ticketScope].description
+                : 'Track the tickets that need your attention across Fitara.'}
+            </p>
           </div>
           <div className="top-actions">
             <span className="demo-badge">
@@ -210,12 +307,18 @@ export function WorkspaceApp() {
             <button onClick={() => setError('')}>Dismiss</button>
           </div>
         )}
-        <Stats tickets={tickets} boot={boot} />
+        {!ticketScope && <Stats tickets={tickets} boot={boot} />}
         <section className="work-panel">
           <div className="panel-head">
             <div>
-              <h2>Assigned work</h2>
-              <p>Prioritized tickets across active projects</p>
+              <h2>
+                {ticketScope ? scopeCopy[ticketScope].label : 'Assigned work'}
+              </h2>
+              <p>
+                {ticketScope
+                  ? `${scopedTickets.length} tickets in this view`
+                  : 'Prioritized tickets across active projects'}
+              </p>
             </div>
             <div className="segmented">
               <button
@@ -243,44 +346,49 @@ export function WorkspaceApp() {
               />
             </label>
             <Select
-              label="Project"
-              value={f.project}
-              change={(project) => setF({ ...f, project })}
-              items={boot.projects}
-            />
-            <Select
               label="Status"
               value={f.status}
               change={(status) => setF({ ...f, status })}
               items={boot.statuses}
             />
             <Select
-              label="Priority"
-              value={f.priority}
-              change={(priority) => setF({ ...f, priority })}
-              items={['p1', 'p2', 'p3', 'p4'].map((id) => ({
-                id,
-                name: id.toUpperCase(),
-              }))}
+              label="Project"
+              value={f.project}
+              change={(project) => setF({ ...f, project })}
+              items={boot.projects}
             />
-            <label className="mine">
-              <input
-                type="checkbox"
-                checked={f.mine}
-                onChange={(e) => setF({ ...f, mine: e.target.checked })}
-              />
-              Only mine
-            </label>
+            <Select
+              label="Assignee"
+              value={f.assignee}
+              change={(assignee) => setF({ ...f, assignee })}
+              items={boot.members}
+            />
+            <Select
+              label="Reporter"
+              value={f.reporter}
+              change={(reporter) => setF({ ...f, reporter })}
+              items={boot.members}
+            />
+            <Select
+              label="Blocked"
+              value={f.blocked}
+              change={(blocked) => setF({ ...f, blocked })}
+              items={[
+                { id: 'true', name: 'Blocked' },
+                { id: 'false', name: 'Not blocked' },
+              ]}
+            />
             {Object.values(f).some(Boolean) && (
               <button
                 className="clear"
                 onClick={() =>
                   setF({
                     q: '',
-                    project: '',
                     status: '',
-                    priority: '',
-                    mine: false,
+                    project: '',
+                    assignee: '',
+                    reporter: '',
+                    blocked: '',
                   })
                 }
               >
@@ -345,8 +453,19 @@ function State({
     </main>
   )
 }
-function Sidebar({ boot, tickets }: { boot: Boot; tickets: Ticket[] }) {
+function Sidebar({
+  boot,
+  tickets,
+  filters,
+  setFilters,
+}: {
+  boot: Boot
+  tickets: Ticket[]
+  filters: Filters
+  setFilters: React.Dispatch<React.SetStateAction<Filters>>
+}) {
   const router = useRouter()
+  const actor = memberFor(boot, boot.actor.membershipId)
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -355,45 +474,83 @@ function Sidebar({ boot, tickets }: { boot: Boot; tickets: Ticket[] }) {
           fitara <b>work</b>
         </span>
       </div>
-      <button className="workspace">
+      <Link className="workspace" href="/settings/workspace">
         <span className="workspace-avatar">FW</span>
         <span>
           <b>{boot.workspace.name}</b>
           <small>Software team</small>
         </span>
         <span>⌄</span>
-      </button>
+      </Link>
       <nav aria-label="Workspace">
         <p>Workspace</p>
-        <a className="active">
+        <button
+          className={!filters.status && !filters.project ? 'active' : ''}
+          onClick={() =>
+            setFilters((current) => ({
+              ...current,
+              status: '',
+              project: '',
+            }))
+          }
+        >
           ⌂<span>My Work</span>
           <kbd>1</kbd>
-        </a>
-        <a>
+        </button>
+        <button
+          className={filters.status === boot.statuses[0]?.id ? 'active' : ''}
+          onClick={() =>
+            setFilters((current) => ({
+              ...current,
+              status: boot.statuses[0]?.id ?? '',
+            }))
+          }
+        >
           ◇<span>Triage Inbox</span>
           <em>
             {tickets.filter((t) => t.statusId === boot.statuses[0]?.id).length}
           </em>
-        </a>
-        <a>
+        </button>
+        <button
+          onClick={() => setFilters((current) => ({ ...current, status: '' }))}
+        >
           ◉<span>Active Work</span>
-        </a>
+        </button>
         <p>Pinned work</p>
         {boot.projects.map((p, i) => (
-          <a key={p.id}>
+          <button
+            key={p.id}
+            className={filters.project === p.id ? 'active' : ''}
+            onClick={() =>
+              setFilters((current) => ({
+                ...current,
+                project: current.project === p.id ? '' : p.id,
+              }))
+            }
+          >
             <i className={`project-dot d${i}`} />
             <span>{p.name}</span>
-          </a>
+          </button>
         ))}
+        <ThemeControls />
       </nav>
       <div className="sidebar-bottom">
         {(boot.actor.role === 'owner' || boot.actor.role === 'admin') && (
-          <>
-            <Link href="/settings/projects">Manage projects</Link>
-            <Link href="/settings/members">Manage members</Link>
-          </>
+          <div className="settings-links">
+            <Link href="/settings/workspace">
+              <I>⚙</I>Workspace settings
+            </Link>
+            <Link href="/settings/projects">
+              <I>◆</I>Manage projects
+            </Link>
+            <Link href="/settings/members">
+              <I>♙</I>Manage members
+            </Link>
+          </div>
         )}
-        <Link href="/account">Change password</Link>
+        <Link className="account-link" href="/account">
+          <I>⌘</I>Change password
+        </Link>
         <button
           onClick={async () => {
             await authClient.signOut()
@@ -403,10 +560,10 @@ function Sidebar({ boot, tickets }: { boot: Boot; tickets: Ticket[] }) {
           <I>↪</I>Log out
         </button>
         <div className="profile">
-          <span className="avatar">AM</span>
+          <span className="avatar">{initials(boot.actor.name)}</span>
           <span>
             <b>{boot.actor.name}</b>
-            <small>{boot.actor.role}</small>
+            <small>{actor?.jobTitle ?? boot.actor.role}</small>
           </span>
           <span>•••</span>
         </div>
@@ -414,33 +571,121 @@ function Sidebar({ boot, tickets }: { boot: Boot; tickets: Ticket[] }) {
     </aside>
   )
 }
+function ThemeControls() {
+  const [open, setOpen] = useState(false)
+  const [theme, setTheme] = useState(defaultTheme)
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('fitara-theme') ?? 'null')
+      const background = saved?.background ?? defaultTheme.background
+      if (
+        saved &&
+        /^#[0-9a-f]{6}$/i.test(saved.primary) &&
+        /^#[0-9a-f]{6}$/i.test(saved.secondary) &&
+        /^#[0-9a-f]{6}$/i.test(background)
+      ) {
+        const timer = setTimeout(() => setTheme({ ...saved, background }), 0)
+        return () => clearTimeout(timer)
+      }
+    } catch {
+      localStorage.removeItem('fitara-theme')
+    }
+  }, [])
+
+  const apply = useCallback((next: typeof defaultTheme) => {
+    document.documentElement.style.setProperty('--primary', next.primary)
+    document.documentElement.style.setProperty('--secondary', next.secondary)
+    document.documentElement.style.setProperty('--bg', next.background)
+  }, [])
+
+  useEffect(() => {
+    apply(theme)
+  }, [apply, theme])
+
+  const update = (key: keyof typeof defaultTheme, value: string) => {
+    const next = { ...theme, [key]: value }
+    setTheme(next)
+    localStorage.setItem('fitara-theme', JSON.stringify(next))
+  }
+
+  const reset = () => {
+    setTheme(defaultTheme)
+    localStorage.removeItem('fitara-theme')
+  }
+
+  return (
+    <div className="theme-controls">
+      <button
+        className="theme-toggle"
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span aria-hidden>◐</span>
+        <span>Theme</span>
+        <span aria-hidden>{open ? '−' : '+'}</span>
+      </button>
+      {open && (
+        <div className="theme-panel">
+          <label>
+            <span>Primary color</span>
+            <input
+              type="color"
+              value={theme.primary}
+              onChange={(event) => update('primary', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Secondary color</span>
+            <input
+              type="color"
+              value={theme.secondary}
+              onChange={(event) => update('secondary', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Background color</span>
+            <input
+              type="color"
+              value={theme.background}
+              onChange={(event) => update('background', event.target.value)}
+            />
+          </label>
+          <button className="theme-reset" type="button" onClick={reset}>
+            Reset colors
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
 function Stats({ tickets, boot }: { tickets: Ticket[]; boot: Boot }) {
   const cards = [
-    [
-      'Open tickets',
-      tickets.filter((t) => t.statusId !== boot.statuses[3]?.id).length,
-      'Across active projects',
-    ],
-    [
-      'Assigned to you',
-      tickets.filter((t) => t.assigneeMembershipId === boot.actor.membershipId)
-        .length,
-      'Ready to move forward',
-    ],
-    [
-      'Needs review',
-      tickets.filter((t) => t.statusId === boot.statuses[2]?.id).length,
-      'Waiting for feedback',
-    ],
-    ['Blocked', tickets.filter((t) => t.blocked).length, 'Needs attention'],
-  ]
+    { key: 'open', caption: 'Across active projects' },
+    { key: 'assigned', caption: 'Ready to move forward' },
+    { key: 'review', caption: 'Waiting for feedback' },
+    { key: 'blocked', caption: 'Needs attention' },
+  ] satisfies { key: TicketScope; caption: string }[]
+  const counts = Object.fromEntries(
+    cards.map(({ key }) => [
+      key,
+      tickets.filter((ticket) => matchesScope(ticket, key, boot)).length,
+    ]),
+  ) as Record<TicketScope, number>
   return (
     <section className="stat-grid">
-      {cards.map((c) => (
-        <article key={c[0]}>
-          <span>{c[0]}</span>
-          <b>{c[1]}</b>
-          <small>{c[2]}</small>
+      {cards.map(({ key, caption }) => (
+        <article key={key}>
+          <span>{scopeCopy[key].label}</span>
+          <Link
+            className="stat-number"
+            href={`/tickets/${key}`}
+            aria-label={`View ${counts[key]} ${scopeCopy[key].label.toLowerCase()}`}
+          >
+            {counts[key]}
+          </Link>
+          <small>{caption}</small>
         </article>
       ))}
     </section>
@@ -484,6 +729,8 @@ function Card({
   move: (id: string, b: object, m?: boolean) => void
   index: number
 }) {
+  const pointerStart = useRef<{ x: number; y: number } | null>(null)
+  const assignee = memberFor(boot, t.assigneeMembershipId)
   const { ref, handleRef, isDragging } = useSortable({
     id: t.id,
     index,
@@ -496,15 +743,27 @@ function Card({
       ref={ref}
       className={`ticket-card ${isDragging ? 'dragging' : ''}`}
     >
+      <span className="drag-handle" aria-hidden>
+        ⠿
+      </span>
       <button
         ref={handleRef}
-        className="drag-handle"
-        aria-label={`Drag ${t.identifier}`}
-        disabled={boot.actor.role === 'viewer'}
+        className="card-open"
+        aria-label={`${t.identifier}: ${t.title}. Open or drag to move.`}
+        onPointerDown={(event) => {
+          pointerStart.current = { x: event.clientX, y: event.clientY }
+        }}
+        onPointerUp={(event) => {
+          const start = pointerStart.current
+          pointerStart.current = null
+          if (
+            start &&
+            Math.hypot(event.clientX - start.x, event.clientY - start.y) < 6
+          )
+            open(t, event as unknown as React.MouseEvent)
+        }}
+        onClick={(event) => event.detail === 0 && open(t, event)}
       >
-        ⠿
-      </button>
-      <button className="card-open" onClick={(e) => open(t, e)}>
         <div className="card-meta">
           <span className={`priority ${t.priority}`}>
             {t.priority.toUpperCase()}
@@ -525,7 +784,7 @@ function Card({
             {t.type === 'bug' ? '◆' : t.type === 'feature' ? '✦' : '□'} {t.type}
           </span>
           <span className="avatar mini">
-            {t.assigneeMembershipId ? 'AM' : '—'}
+            {assignee ? initials(assignee.name) : '—'}
           </span>
         </footer>
       </button>
@@ -707,7 +966,14 @@ function List({
                   {t.priority.toUpperCase()}
                 </span>
               </td>
-              <td>{t.assigneeMembershipId ? 'Alex Morgan' : 'Unassigned'}</td>
+              <td>
+                {memberFor(boot, t.assigneeMembershipId)?.name ?? 'Unassigned'}
+                {memberFor(boot, t.assigneeMembershipId)?.jobTitle && (
+                  <small className="member-role">
+                    {memberFor(boot, t.assigneeMembershipId)?.jobTitle}
+                  </small>
+                )}
+              </td>
               <td>
                 <div className="labels">
                   {t.labels.map((l) => (
@@ -870,6 +1136,7 @@ function Create({
             {boot.members.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
+                {x.jobTitle ? ` — ${x.jobTitle}` : ''}
               </option>
             ))}
           </select>
@@ -918,6 +1185,9 @@ function Detail({
       assigneeMembershipId: f.get('assignee') || null,
       dueDate: f.get('due') || null,
       blocked: f.get('blocked') === 'on',
+      ...Object.fromEntries(
+        ticketDetailFields.map(({ key }) => [key, f.get(key)]),
+      ),
     })
     setEdit(false)
   }
@@ -967,6 +1237,7 @@ function Detail({
               {boot.members.map((x) => (
                 <option key={x.id} value={x.id}>
                   {x.name}
+                  {x.jobTitle ? ` — ${x.jobTitle}` : ''}
                 </option>
               ))}
             </select>
@@ -983,6 +1254,15 @@ function Detail({
           />
           Blocked
         </label>
+        <section className="supplemental-edit">
+          <h2>Additional ticket details</h2>
+          <p>Use one item per line where a field contains multiple entries.</p>
+          {ticketDetailFields.map(({ key, label }) => (
+            <Field label={label} key={key}>
+              <textarea name={key} rows={3} defaultValue={ticket[key]} />
+            </Field>
+          ))}
+        </section>
         <button className="save-button">Save changes</button>
       </form>
     )
@@ -1011,11 +1291,15 @@ function Detail({
         </div>
         <div>
           <dt>Assignee</dt>
-          <dd>{ticket.assigneeMembershipId ? 'Alex Morgan' : 'Unassigned'}</dd>
+          <dd>
+            {memberFor(boot, ticket.assigneeMembershipId)?.name ?? 'Unassigned'}
+          </dd>
         </div>
         <div>
           <dt>Reporter</dt>
-          <dd>Alex Morgan</dd>
+          <dd>
+            {memberFor(boot, ticket.reporterMembershipId)?.name ?? 'Unknown'}
+          </dd>
         </div>
         <div>
           <dt>Due date</dt>
@@ -1044,17 +1328,18 @@ function Detail({
         ))}
       </section>
       <section className="later">
-        <h2>Coming later</h2>
-        <div>
-          {[
-            'Acceptance criteria',
-            'Comments',
-            'Subtasks',
-            'Dependencies',
-            'Attachments',
-            'GitHub development',
-          ].map((x) => (
-            <span key={x}>{x}</span>
+        <div className="detail-section-heading">
+          <h2>Additional details</h2>
+          {boot.actor.role !== 'viewer' && (
+            <button onClick={() => setEdit(true)}>Edit details</button>
+          )}
+        </div>
+        <div className="supplemental-grid">
+          {ticketDetailFields.map(({ key, label }) => (
+            <article className={ticket[key] ? 'populated' : ''} key={key}>
+              <h3>{label}</h3>
+              <p>{ticket[key] || 'No information added yet.'}</p>
+            </article>
           ))}
         </div>
       </section>

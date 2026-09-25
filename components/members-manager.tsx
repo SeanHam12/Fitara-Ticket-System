@@ -8,9 +8,18 @@ type Member = {
   username: string
   email: string
   role: string
+  jobTitle: string
+  teamRoleId: string | null
+  jobCategoryId: string | null
+  jobFunctionId: string | null
   state: string
   createdAt: string
   lastActiveAt: string | null
+}
+type TaxonomyItem = {
+  id: string
+  type: 'role' | 'job_category' | 'job_function'
+  name: string
 }
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init),
@@ -20,16 +29,19 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 export function MembersManager() {
   const [members, setMembers] = useState<Member[]>([]),
+    [taxonomy, setTaxonomy] = useState<TaxonomyItem[]>([]),
     [actorRole, setActorRole] = useState<'owner' | 'admin'>('admin'),
     [error, setError] = useState('')
   const load = () =>
     Promise.all([
       request<Member[]>('/api/v1/memberships'),
       request<{ actor: { role: 'owner' | 'admin' } }>('/api/v1/bootstrap'),
+      request<{ taxonomy: TaxonomyItem[] }>('/api/v1/workspace'),
     ])
-      .then(([memberRows, boot]) => {
+      .then(([memberRows, boot, workspace]) => {
         setMembers(memberRows)
         setActorRole(boot.actor.role)
+        setTaxonomy(workspace.taxonomy)
       })
       .catch((e) => setError(e.message))
   useEffect(() => {
@@ -117,6 +129,33 @@ export function MembersManager() {
           </select>
         </label>
         <label>
+          Job title
+          <input
+            name="jobTitle"
+            maxLength={100}
+            placeholder="Software Engineer"
+            required
+          />
+        </label>
+        <TaxonomySelect
+          name="teamRoleId"
+          label="Team role"
+          type="role"
+          items={taxonomy}
+        />
+        <TaxonomySelect
+          name="jobCategoryId"
+          label="Job category"
+          type="job_category"
+          items={taxonomy}
+        />
+        <TaxonomySelect
+          name="jobFunctionId"
+          label="Job function"
+          type="job_function"
+          items={taxonomy}
+        />
+        <label>
           Temporary password
           <input
             name="password"
@@ -137,6 +176,10 @@ export function MembersManager() {
               <th>Username</th>
               <th>Email</th>
               <th>Role</th>
+              <th>Job title</th>
+              <th>Team role</th>
+              <th>Category</th>
+              <th>Function</th>
               <th>State</th>
               <th>Created</th>
               <th>Last active</th>
@@ -164,6 +207,35 @@ export function MembersManager() {
                       <option key={role}>{role}</option>
                     ))}
                   </select>
+                </td>
+                <td>{member.jobTitle}</td>
+                <td>
+                  <InlineTaxonomySelect
+                    value={member.teamRoleId}
+                    type="role"
+                    items={taxonomy}
+                    change={(teamRoleId) => void update(member, { teamRoleId })}
+                  />
+                </td>
+                <td>
+                  <InlineTaxonomySelect
+                    value={member.jobCategoryId}
+                    type="job_category"
+                    items={taxonomy}
+                    change={(jobCategoryId) =>
+                      void update(member, { jobCategoryId })
+                    }
+                  />
+                </td>
+                <td>
+                  <InlineTaxonomySelect
+                    value={member.jobFunctionId}
+                    type="job_function"
+                    items={taxonomy}
+                    change={(jobFunctionId) =>
+                      void update(member, { jobFunctionId })
+                    }
+                  />
                 </td>
                 <td>{member.state}</td>
                 <td>{new Date(member.createdAt).toLocaleDateString()}</td>
@@ -197,5 +269,61 @@ export function MembersManager() {
         </table>
       </div>
     </main>
+  )
+}
+
+function TaxonomySelect({
+  name,
+  label,
+  type,
+  items,
+}: {
+  name: string
+  label: string
+  type: TaxonomyItem['type']
+  items: TaxonomyItem[]
+}) {
+  return (
+    <label>
+      {label}
+      <select name={name}>
+        <option value="">Not assigned</option>
+        {items
+          .filter((item) => item.type === type)
+          .map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+            </option>
+          ))}
+      </select>
+    </label>
+  )
+}
+
+function InlineTaxonomySelect({
+  value,
+  type,
+  items,
+  change,
+}: {
+  value: string | null
+  type: TaxonomyItem['type']
+  items: TaxonomyItem[]
+  change: (value: string | null) => void
+}) {
+  return (
+    <select
+      value={value ?? ''}
+      onChange={(event) => change(event.target.value || null)}
+    >
+      <option value="">—</option>
+      {items
+        .filter((item) => item.type === type)
+        .map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+    </select>
   )
 }

@@ -43,6 +43,11 @@ export const ticketTypeEnum = pgEnum('ticket_type', [
   'improvement',
 ])
 export const priorityEnum = pgEnum('ticket_priority', ['p1', 'p2', 'p3', 'p4'])
+export const taxonomyTypeEnum = pgEnum('workspace_taxonomy_type', [
+  'role',
+  'job_category',
+  'job_function',
+])
 
 export const workspaces = pgTable('workspaces', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -50,6 +55,22 @@ export const workspaces = pgTable('workspaces', {
   slug: varchar('slug', { length: 63 }).notNull().unique(),
   ...timestamps,
 })
+
+export const workspaceTaxonomyItems = pgTable(
+  'workspace_taxonomy_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    type: taxonomyTypeEnum('type').notNull(),
+    name: varchar('name', { length: 100 }).notNull(),
+    description: text('description').notNull().default(''),
+    color: varchar('color', { length: 7 }).notNull().default('#6957e8'),
+    ...timestamps,
+  },
+  (t) => [unique().on(t.workspaceId, t.type, t.name)],
+)
 
 export const users = pgTable(
   'users',
@@ -143,6 +164,23 @@ export const memberships = pgTable(
       .notNull()
       .references(() => users.id),
     role: roleEnum('role').notNull(),
+    jobTitle: varchar('job_title', { length: 100 })
+      .notNull()
+      .default('Software Engineer'),
+    teamRoleId: uuid('team_role_id').references(
+      () => workspaceTaxonomyItems.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
+    jobCategoryId: uuid('job_category_id').references(
+      () => workspaceTaxonomyItems.id,
+      { onDelete: 'set null' },
+    ),
+    jobFunctionId: uuid('job_function_id').references(
+      () => workspaceTaxonomyItems.id,
+      { onDelete: 'set null' },
+    ),
     state: membershipStateEnum('state').notNull().default('active'),
     ...timestamps,
   },
@@ -229,6 +267,12 @@ export const tickets = pgTable(
     ),
     position: integer('position').notNull().default(1000),
     blocked: boolean('blocked').notNull().default(false),
+    acceptanceCriteria: text('acceptance_criteria').notNull().default(''),
+    comments: text('comments').notNull().default(''),
+    subtasks: text('subtasks').notNull().default(''),
+    dependencies: text('dependencies').notNull().default(''),
+    attachments: text('attachments').notNull().default(''),
+    githubDevelopment: text('github_development').notNull().default(''),
     dueDate: date('due_date'),
     version: integer('version').notNull().default(1),
     archivedAt: timestamp('archived_at', { withTimezone: true }),

@@ -4,6 +4,7 @@ import { forbidden } from '@/server/errors'
 export type Capability =
   | 'workspace.read'
   | 'workspace.manage'
+  | 'taxonomy.manage'
   | 'membership.create'
   | 'membership.manage'
   | 'membership.changeRole'
@@ -19,6 +20,7 @@ const grants: Record<WorkspaceRole, readonly Capability[]> = {
   owner: [
     'workspace.read',
     'workspace.manage',
+    'taxonomy.manage',
     'membership.create',
     'membership.manage',
     'membership.changeRole',
@@ -32,6 +34,7 @@ const grants: Record<WorkspaceRole, readonly Capability[]> = {
   ],
   admin: [
     'workspace.read',
+    'taxonomy.manage',
     'membership.create',
     'membership.manage',
     'membership.changeRole',

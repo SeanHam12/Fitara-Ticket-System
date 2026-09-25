@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceApp } from './workspace-app'
@@ -32,6 +32,7 @@ const ticket = {
   priority: 'p2',
   statusId: id(5),
   projectId: id(4),
+  reporterMembershipId: id(3),
   assigneeMembershipId: id(3),
   position: 1000,
   blocked: false,
@@ -57,8 +58,47 @@ describe('workspace interaction', () => {
     )
     render(<WorkspaceApp />)
     expect(await screen.findByText('Your work, in focus.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Drag FIT-1' })).toBeEnabled()
+    for (const filter of [
+      'Status',
+      'Project',
+      'Assignee',
+      'Reporter',
+      'Blocked',
+    ])
+      expect(screen.getByRole('combobox', { name: filter })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull()
+    expect(
+      screen.getByRole('link', { name: /workspace settings/i }),
+    ).toHaveAttribute('href', '/settings/workspace')
+    expect(
+      screen.getByRole('link', { name: 'View 1 open tickets' }),
+    ).toHaveAttribute('href', '/tickets/open')
+    expect(
+      screen.getByRole('link', { name: 'View 1 assigned to you' }),
+    ).toHaveAttribute('href', '/tickets/assigned')
+    expect(
+      screen.getByRole('link', { name: 'View 0 needs review' }),
+    ).toHaveAttribute('href', '/tickets/review')
+    expect(
+      screen.getByRole('link', { name: 'View 0 blocked' }),
+    ).toHaveAttribute('href', '/tickets/blocked')
+    expect(
+      screen.getByRole('button', {
+        name: 'FIT-1: Build the demo. Open or drag to move.',
+      }),
+    ).toBeEnabled()
+    await userEvent.click(screen.getByRole('button', { name: 'Theme' }))
+    expect(screen.getByLabelText('Primary color')).toBeInTheDocument()
+    expect(screen.getByLabelText('Secondary color')).toBeInTheDocument()
+    expect(screen.getByLabelText('Background color')).toBeInTheDocument()
     expect(screen.getByLabelText('Move FIT-1')).toBeEnabled()
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'FIT-1: Build the demo. Open or drag to move.',
+      }),
+    )
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: /close drawer/i }))
     await userEvent.click(screen.getByRole('button', { name: /list/i }))
     expect(
       screen.getByRole('columnheader', { name: 'Ticket' }),

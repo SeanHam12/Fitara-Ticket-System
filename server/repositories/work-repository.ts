@@ -55,6 +55,12 @@ const summarySelect = {
   assigneeMembershipId: tickets.assigneeMembershipId,
   position: tickets.position,
   blocked: tickets.blocked,
+  acceptanceCriteria: tickets.acceptanceCriteria,
+  comments: tickets.comments,
+  subtasks: tickets.subtasks,
+  dependencies: tickets.dependencies,
+  attachments: tickets.attachments,
+  githubDevelopment: tickets.githubDevelopment,
   dueDate: tickets.dueDate,
   version: tickets.version,
   updatedAt: tickets.updatedAt,
@@ -72,6 +78,12 @@ type Summary = {
   assigneeMembershipId: string | null
   position: number
   blocked: boolean
+  acceptanceCriteria: string
+  comments: string
+  subtasks: string
+  dependencies: string
+  attachments: string
+  githubDevelopment: string
   dueDate: string | null
   version: number
   updatedAt: Date
@@ -89,6 +101,12 @@ type UpdateInput = z.infer<typeof updateTicketSchema> & {
   labelIds?: string[]
   dueDate?: string | null
   blocked?: boolean
+  acceptanceCriteria?: string
+  comments?: string
+  subtasks?: string
+  dependencies?: string
+  attachments?: string
+  githubDevelopment?: string
   position?: number
 }
 
@@ -122,7 +140,11 @@ export class WorkRepository {
           .where(eq(labels.workspaceId, actor.workspaceId))
           .orderBy(asc(labels.name)),
         this.db
-          .select({ id: memberships.id, name: users.name })
+          .select({
+            id: memberships.id,
+            name: users.name,
+            jobTitle: memberships.jobTitle,
+          })
           .from(memberships)
           .innerJoin(users, eq(users.id, memberships.userId))
           .where(

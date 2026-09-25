@@ -11,6 +11,12 @@ const fields = {
   labelIds: z.array(z.string().uuid()).max(20).default([]),
   dueDate: z.iso.date().nullable().optional(),
   blocked: z.boolean().optional(),
+  acceptanceCriteria: z.string().max(20000).default(''),
+  comments: z.string().max(20000).default(''),
+  subtasks: z.string().max(20000).default(''),
+  dependencies: z.string().max(20000).default(''),
+  attachments: z.string().max(20000).default(''),
+  githubDevelopment: z.string().max(20000).default(''),
 }
 export const createTicketSchema = z
   .object({ projectId: z.string().uuid(), ...fields })

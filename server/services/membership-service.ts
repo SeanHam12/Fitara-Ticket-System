@@ -11,6 +11,7 @@ import {
   memberships,
   sessions,
   users,
+  workspaceTaxonomyItems,
 } from '@/server/db/schema'
 import { conflict, forbidden, notFound } from '@/server/errors'
 
@@ -21,6 +22,10 @@ const username = z
   .min(3)
   .max(32)
   .regex(/^[a-z0-9._-]+$/)
+const optionalTaxonomyId = z.preprocess(
+  (value) => (value === '' ? null : value),
+  z.uuid().nullable(),
+)
 const createSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -28,6 +33,10 @@ const createSchema = z
     email: z.email().max(320),
     password: z.string().min(12).max(128),
     role: z.enum(['owner', 'admin', 'member', 'viewer']),
+    jobTitle: z.string().trim().min(2).max(100),
+    teamRoleId: optionalTaxonomyId.optional(),
+    jobCategoryId: optionalTaxonomyId.optional(),
+    jobFunctionId: optionalTaxonomyId.optional(),
   })
   .strict()
 const updateSchema = z
@@ -35,9 +44,13 @@ const updateSchema = z
     role: z.enum(['owner', 'admin', 'member', 'viewer']).optional(),
     state: z.enum(['active', 'suspended']).optional(),
     temporaryPassword: z.string().min(12).max(128).optional(),
+    jobTitle: z.string().trim().min(2).max(100).optional(),
+    teamRoleId: optionalTaxonomyId.optional(),
+    jobCategoryId: optionalTaxonomyId.optional(),
+    jobFunctionId: optionalTaxonomyId.optional(),
   })
   .strict()
-  .refine((value) => value.role || value.state || value.temporaryPassword)
+  .refine((value) => Object.values(value).some((item) => item !== undefined))
 
 export class MembershipService {
   private db = getDb()
@@ -51,6 +64,10 @@ export class MembershipService {
         username: users.username,
         email: users.email,
         role: memberships.role,
+        jobTitle: memberships.jobTitle,
+        teamRoleId: memberships.teamRoleId,
+        jobCategoryId: memberships.jobCategoryId,
+        jobFunctionId: memberships.jobFunctionId,
         state: memberships.state,
         createdAt: memberships.createdAt,
         lastActiveAt: sql<Date | null>`max(${sessions.updatedAt})`,
@@ -67,6 +84,7 @@ export class MembershipService {
     const input = createSchema.parse(body)
     if (actor.role === 'admin' && !['member', 'viewer'].includes(input.role))
       throw forbidden('Admins may create member or viewer accounts only.')
+    await this.validateTaxonomy(actor, input)
     const result = await createAuth(true).api.signUpEmail({
       body: {
         name: input.name,
@@ -89,6 +107,10 @@ export class MembershipService {
           workspaceId: actor.workspaceId,
           userId: result.user.id,
           role: input.role,
+          jobTitle: input.jobTitle,
+          teamRoleId: input.teamRoleId,
+          jobCategoryId: input.jobCategoryId,
+          jobFunctionId: input.jobFunctionId,
           state: 'active',
         })
         .returning()
@@ -111,6 +133,7 @@ export class MembershipService {
   async update(actor: ActorContext, membershipId: string, body: unknown) {
     requireCapability(actor, 'membership.manage')
     const input = updateSchema.parse(body)
+    await this.validateTaxonomy(actor, input)
     const passwordHash = input.temporaryPassword
       ? await (
           await createAuth(false).$context
@@ -157,7 +180,15 @@ export class MembershipService {
       }
       const [updated] = await tx
         .update(memberships)
-        .set({ role: input.role, state: input.state, updatedAt: new Date() })
+        .set({
+          role: input.role,
+          state: input.state,
+          jobTitle: input.jobTitle,
+          teamRoleId: input.teamRoleId,
+          jobCategoryId: input.jobCategoryId,
+          jobFunctionId: input.jobFunctionId,
+          updatedAt: new Date(),
+        })
         .where(eq(memberships.id, membershipId))
         .returning()
       if (input.state === 'suspended')
@@ -190,11 +221,43 @@ export class MembershipService {
             ? 'membership.role_changed'
             : input.state === 'suspended'
               ? 'membership.suspended'
-              : 'membership.restored',
+              : input.state === 'active'
+                ? 'membership.restored'
+                : 'membership.profile_updated',
         metadata: { membershipId, role: input.role, state: input.state },
         correlationId: actor.requestId,
       })
       return updated
     })
+  }
+
+  private async validateTaxonomy(
+    actor: ActorContext,
+    input: {
+      teamRoleId?: string | null
+      jobCategoryId?: string | null
+      jobFunctionId?: string | null
+    },
+  ) {
+    const checks = [
+      [input.teamRoleId, 'role'],
+      [input.jobCategoryId, 'job_category'],
+      [input.jobFunctionId, 'job_function'],
+    ] as const
+    for (const [id, type] of checks) {
+      if (!id) continue
+      const [item] = await this.db
+        .select({ id: workspaceTaxonomyItems.id })
+        .from(workspaceTaxonomyItems)
+        .where(
+          and(
+            eq(workspaceTaxonomyItems.id, id),
+            eq(workspaceTaxonomyItems.workspaceId, actor.workspaceId),
+            eq(workspaceTaxonomyItems.type, type),
+          ),
+        )
+        .limit(1)
+      if (!item) throw notFound('Workspace classification not found.')
+    }
   }
 }

@@ -4,11 +4,14 @@ import { username } from 'better-auth/plugins'
 import { getServerEnv } from '@/lib/env'
 import { getDb } from '@/server/db/client-core'
 import { accounts, sessions, users, verifications } from '@/server/db/schema'
+import { getDevLoginBypassConfig } from '@/server/auth/dev-login-bypass'
+import { devLoginBypassPlugin } from '@/server/auth/dev-login-bypass-plugin'
 
 const reserved = new Set(['admin', 'api', 'root', 'support', 'system'])
 
 export function createAuth(allowSignUp = false) {
   const env = getServerEnv()
+  const devBypassEnabled = Boolean(getDevLoginBypassConfig())
   return betterAuth({
     appName: 'Fitara Work',
     baseURL: env.BETTER_AUTH_URL,
@@ -40,6 +43,7 @@ export function createAuth(allowSignUp = false) {
           /^[a-zA-Z0-9._-]+$/.test(value) && !reserved.has(value.toLowerCase()),
         usernameNormalization: (value) => value.trim().toLowerCase(),
       }),
+      ...(devBypassEnabled ? [devLoginBypassPlugin()] : []),
     ],
     disabledPaths: allowSignUp
       ? ['/sign-in/email', '/is-username-available']

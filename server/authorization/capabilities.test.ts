@@ -6,6 +6,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
   owner: {
     'workspace.read': true,
     'workspace.manage': true,
+    'taxonomy.manage': true,
     'membership.create': true,
     'membership.manage': true,
     'membership.changeRole': true,
@@ -20,6 +21,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
   admin: {
     'workspace.read': true,
     'workspace.manage': false,
+    'taxonomy.manage': true,
     'membership.create': true,
     'membership.manage': true,
     'membership.changeRole': true,
@@ -34,6 +36,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
   member: {
     'workspace.read': true,
     'workspace.manage': false,
+    'taxonomy.manage': false,
     'membership.create': false,
     'membership.manage': false,
     'membership.changeRole': false,
@@ -48,6 +51,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
   viewer: {
     'workspace.read': true,
     'workspace.manage': false,
+    'taxonomy.manage': false,
     'membership.create': false,
     'membership.manage': false,
     'membership.changeRole': false,
