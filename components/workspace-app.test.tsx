@@ -2,9 +2,16 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkspaceApp } from './workspace-app'
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('@/lib/auth-client', () => ({ authClient: { signOut: vi.fn() } }))
 const id = (n: number) => `${n}0000000-0000-4000-8000-000000000001`
 const boot = {
-  actor: { name: 'Alex Morgan', membershipId: id(3) },
+  actor: {
+    name: 'Alex Morgan',
+    membershipId: id(3),
+    role: 'owner',
+    passwordChangeRequired: false,
+  },
   workspace: { id: id(1), name: 'Fitara Demo' },
   projects: [{ id: id(4), name: 'Fitara Work' }],
   statuses: [
@@ -50,6 +57,8 @@ describe('workspace interaction', () => {
     )
     render(<WorkspaceApp />)
     expect(await screen.findByText('Your work, in focus.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Drag FIT-1' })).toBeEnabled()
+    expect(screen.getByLabelText('Move FIT-1')).toBeEnabled()
     await userEvent.click(screen.getByRole('button', { name: /list/i }))
     expect(
       screen.getByRole('columnheader', { name: 'Ticket' }),

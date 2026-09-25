@@ -27,6 +27,7 @@ export const moveTicketSchema = z
   .object({
     expectedVersion: z.number().int().positive(),
     statusId: z.string().uuid(),
+    beforeTicketId: z.string().uuid().nullable().optional(),
   })
   .strict()
 export const ticketFiltersSchema = z.object({
@@ -38,3 +39,37 @@ export const ticketFiltersSchema = z.object({
   search: z.string().trim().max(200).optional(),
   sort: z.enum(['updated', 'priority', 'identifier']).default('updated'),
 })
+export const createProjectSchema = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    slug: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(2)
+      .max(80)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    key: z
+      .string()
+      .trim()
+      .toUpperCase()
+      .min(2)
+      .max(10)
+      .regex(/^[A-Z][A-Z0-9]+$/),
+    description: z.string().max(5000).default(''),
+  })
+  .strict()
+export const updateProjectSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+    name: z.string().trim().min(1).max(100).optional(),
+    description: z.string().max(5000).optional(),
+    archived: z.boolean().optional(),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      value.name !== undefined ||
+      value.description !== undefined ||
+      value.archived !== undefined,
+  )

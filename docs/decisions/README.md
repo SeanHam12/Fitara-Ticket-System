@@ -15,3 +15,4 @@ ADRs capture choices that materially constrain Fitara Work. Statuses are Propose
 - [ADR-0011: Neon node-postgres transactions](0011-neon-node-postgres-transactions.md)
 - [ADR-0012: Invite admission and session policy](0012-invite-admission-and-session-policy.md)
 - [ADR-0013: Project archive and preview isolation](0013-project-archive-and-preview-isolation.md)
+- [ADR-0014: Better Auth, workspace RBAC, and server-authoritative Dnd Kit](0014-better-auth-workspace-rbac-and-dnd.md)

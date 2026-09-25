@@ -24,6 +24,8 @@ describe.skipIf(!enabled)('PostgreSQL ticket invariants', () => {
       role: 'owner' as const,
       requestId: crypto.randomUUID(),
       name: 'Integration actor',
+      membershipState: 'active' as const,
+      sessionId: crypto.randomUUID(),
     }
     const input = {
       projectId: project.id,

@@ -27,6 +27,107 @@ select,
 textarea {
   font: inherit;
 }
+.auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at top, #eeeaff, var(--bg) 45%);
+}
+.auth-card {
+  width: min(420px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  padding: 32px;
+  display: grid;
+  gap: 18px;
+}
+.auth-card h1,
+.auth-card p {
+  margin: 0;
+}
+.auth-card label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.auth-card input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px;
+}
+.admin-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+.member-create {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  margin: 24px 0;
+}
+.member-create h2 {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.member-create label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.member-create input,
+.member-create select {
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.drag-handle {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+.ticket-card {
+  position: relative;
+}
+.ticket-card.dragging {
+  opacity: 0.35;
+}
+.column.drop-target {
+  outline: 2px dashed var(--purple);
+  outline-offset: -2px;
+}
+.drag-preview {
+  max-width: 270px;
+  padding: 14px;
+  border-radius: 10px;
+  background: white;
+  border: 1px solid var(--purple);
+  box-shadow: var(--shadow);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
 button,
 select {
   cursor: pointer;

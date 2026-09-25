@@ -1,1 +1,1 @@
-{"version":"7","dialect":"postgresql","entries":[{"idx":0,"version":"7","when":1790294400000,"tag":"0000_demo_vertical_slice","breakpoints":true}]}
+{"version":"7","dialect":"postgresql","entries":[{"idx":0,"version":"7","when":1790294400000,"tag":"0000_demo_vertical_slice","breakpoints":true},{"idx":1,"version":"7","when":1790298000000,"tag":"0001_username_password_auth","breakpoints":true}]}

@@ -616,3 +616,8 @@ erDiagram
 - Constraints are introduced `NOT VALID`/validated later where large-table locking requires it.
 - Large indexes use safe concurrent procedures when supported by the migration process.
 - Neon PITR/backup retention and restore drills must cover both domain and Better Auth tables.
+# Phase 2 additions
+
+`users` now carries canonical/display username, email-verification compatibility, and password-change-required state. `accounts` contains Better Auth credential hashes; `sessions` contains revocable database sessions; `verifications` is reserved for supported Better Auth verification flows. Passwords and tokens never appear in application DTOs or activity metadata. Workspace membership remains the sole source of application role and state.
+
+Administrative activity can be workspace-scoped without a project, so `activity_events.project_id` is nullable. Existing ticket, reporter, assignee, membership, project, and activity identifiers remain unchanged.

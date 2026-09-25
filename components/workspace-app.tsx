@@ -1,5 +1,22 @@
 'use client'
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import { authClient } from '@/lib/auth-client'
+import {
+  DragDropProvider,
+  DragOverlay,
+  useDroppable,
+  useDragOperation,
+} from '@dnd-kit/react'
+import { useSortable } from '@dnd-kit/react/sortable'
+import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 type Ref = {
   id: string
@@ -9,7 +26,12 @@ type Ref = {
   position?: number
 }
 type Boot = {
-  actor: { name: string; membershipId: string }
+  actor: {
+    name: string
+    membershipId: string
+    role: 'owner' | 'admin' | 'member' | 'viewer'
+    passwordChangeRequired: boolean
+  }
   workspace: Ref
   projects: Ref[]
   statuses: Ref[]
@@ -36,8 +58,16 @@ export type Ticket = {
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init),
     b = await r.json()
-  if (!r.ok) throw new Error(b.detail || 'Request failed')
+  if (!r.ok) throw new ApiError(r.status, b.detail || 'Request failed')
   return b.data
+}
+class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message)
+  }
 }
 const I = ({ children }: { children: string }) => (
   <span aria-hidden className="icon">
@@ -45,6 +75,7 @@ const I = ({ children }: { children: string }) => (
   </span>
 )
 export function WorkspaceApp() {
+  const router = useRouter()
   const [boot, setBoot] = useState<Boot>(),
     [tickets, setTickets] = useState<Ticket[]>([]),
     [view, setView] = useState<'board' | 'list'>('board'),
@@ -60,25 +91,33 @@ export function WorkspaceApp() {
     mine: false,
   })
   const trigger = useRef<HTMLElement | null>(null)
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true)
       const [b, t] = await Promise.all([
         api<Boot>('/api/v1/bootstrap'),
         api<Ticket[]>('/api/v1/tickets'),
       ])
+      if (b.actor.passwordChangeRequired) {
+        router.push('/account')
+        return
+      }
       setBoot(b)
       setTickets(t)
       setError('')
     } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        router.push('/login?expired=1')
+        return
+      }
       setError(e instanceof Error ? e.message : 'Unable to load')
     } finally {
       setLoading(false)
     }
-  }
+  }, [router])
   useEffect(() => {
     void Promise.resolve().then(load)
-  }, [])
+  }, [load])
   const shown = useMemo(
     () =>
       tickets.filter(
@@ -119,12 +158,21 @@ export function WorkspaceApp() {
       )
       setTickets((v) => v.map((t) => (t.id === id ? updated : t)))
       setTicket(updated)
+      if (move) await load()
       setError('')
     } catch (x) {
+      if (x instanceof ApiError && x.status === 401) {
+        router.push('/login?expired=1')
+        return
+      }
       setError(
-        x instanceof Error
-          ? `${x.message} Latest data was restored.`
-          : 'Change failed',
+        x instanceof ApiError && x.status === 403
+          ? 'Permission denied. Your role does not permit that change.'
+          : x instanceof ApiError && x.status === 409
+            ? 'This ticket changed elsewhere. Latest data was restored.'
+            : x instanceof Error
+              ? `${x.message} Latest data was restored.`
+              : 'Change failed',
       )
       await load()
     }
@@ -149,9 +197,11 @@ export function WorkspaceApp() {
               <i />
               Demo environment
             </span>
-            <button className="new-button" onClick={() => setCreate(true)}>
-              <I>＋</I>New ticket
-            </button>
+            {boot.actor.role !== 'viewer' && (
+              <button className="new-button" onClick={() => setCreate(true)}>
+                <I>＋</I>New ticket
+              </button>
+            )}
           </div>
         </header>
         {error && (
@@ -296,6 +346,7 @@ function State({
   )
 }
 function Sidebar({ boot, tickets }: { boot: Boot; tickets: Ticket[] }) {
+  const router = useRouter()
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -336,14 +387,26 @@ function Sidebar({ boot, tickets }: { boot: Boot; tickets: Ticket[] }) {
         ))}
       </nav>
       <div className="sidebar-bottom">
-        <button>
-          <I>◐</I>Theme
+        {(boot.actor.role === 'owner' || boot.actor.role === 'admin') && (
+          <>
+            <Link href="/settings/projects">Manage projects</Link>
+            <Link href="/settings/members">Manage members</Link>
+          </>
+        )}
+        <Link href="/account">Change password</Link>
+        <button
+          onClick={async () => {
+            await authClient.signOut()
+            router.push('/login')
+          }}
+        >
+          <I>↪</I>Log out
         </button>
         <div className="profile">
           <span className="avatar">AM</span>
           <span>
             <b>{boot.actor.name}</b>
-            <small>Demo owner</small>
+            <small>{boot.actor.role}</small>
           </span>
           <span>•••</span>
         </div>
@@ -413,14 +476,34 @@ function Card({
   boot,
   open,
   move,
+  index,
 }: {
   t: Ticket
   boot: Boot
   open: (t: Ticket, e: React.MouseEvent) => void
   move: (id: string, b: object, m?: boolean) => void
+  index: number
 }) {
+  const { ref, handleRef, isDragging } = useSortable({
+    id: t.id,
+    index,
+    group: t.statusId,
+    data: { ticketId: t.id, statusId: t.statusId },
+    disabled: boot.actor.role === 'viewer',
+  })
   return (
-    <article className="ticket-card">
+    <article
+      ref={ref}
+      className={`ticket-card ${isDragging ? 'dragging' : ''}`}
+    >
+      <button
+        ref={handleRef}
+        className="drag-handle"
+        aria-label={`Drag ${t.identifier}`}
+        disabled={boot.actor.role === 'viewer'}
+      >
+        ⠿
+      </button>
       <button className="card-open" onClick={(e) => open(t, e)}>
         <div className="card-meta">
           <span className={`priority ${t.priority}`}>
@@ -449,6 +532,7 @@ function Card({
       <label className="quick-move">
         <span className="sr-only">Move {t.identifier}</span>
         <select
+          disabled={boot.actor.role === 'viewer'}
           value={t.statusId}
           onChange={(e) =>
             move(
@@ -479,26 +563,105 @@ function Board({
   open: (t: Ticket, e: React.MouseEvent) => void
   move: (id: string, b: object, m?: boolean) => void
 }) {
+  const canMove = boot.actor.role !== 'viewer'
   return (
-    <div className="board">
-      {boot.statuses.map((s, i) => (
-        <section className="column" key={s.id}>
-          <header>
-            <i className={`status-dot s${i}`} />
-            <h3>{s.name}</h3>
-            <em>{tickets.filter((t) => t.statusId === s.id).length}</em>
-          </header>
-          <div>
-            {tickets
-              .filter((t) => t.statusId === s.id)
-              .map((t) => (
-                <Card key={t.id} t={t} boot={boot} open={open} move={move} />
-              ))}
-          </div>
-        </section>
-      ))}
-    </div>
+    <DragDropProvider
+      onDragEnd={(event) => {
+        if (event.canceled || !canMove) return
+        const source = event.operation.source,
+          target = event.operation.target
+        if (!source || !target) return
+        const ticket = tickets.find((item) => item.id === source.id)
+        const targetTicket = tickets.find((item) => item.id === target.id)
+        const targetStatus =
+          targetTicket?.statusId ??
+          String(target.data?.statusId ?? '').replace('column:', '')
+        if (!ticket || !targetStatus || ticket.id === targetTicket?.id) return
+        move(
+          ticket.id,
+          {
+            statusId: targetStatus,
+            beforeTicketId: targetTicket?.id ?? null,
+            expectedVersion: ticket.version,
+          },
+          true,
+        )
+      }}
+    >
+      <div className="board">
+        {boot.statuses.map((s, i) => (
+          <BoardColumn
+            key={s.id}
+            status={s}
+            statusIndex={i}
+            tickets={tickets}
+            boot={boot}
+            open={open}
+            move={move}
+          />
+        ))}
+      </div>
+      <DragOverlay>
+        <DragPreview tickets={tickets} />
+      </DragOverlay>
+    </DragDropProvider>
   )
+}
+function BoardColumn({
+  status: s,
+  statusIndex: i,
+  tickets,
+  boot,
+  open,
+  move,
+}: {
+  status: Ref
+  statusIndex: number
+  tickets: Ticket[]
+  boot: Boot
+  open: (t: Ticket, e: React.MouseEvent) => void
+  move: (id: string, b: object, m?: boolean) => void
+}) {
+  const { ref, isDropTarget } = useDroppable({
+    id: `column:${s.id}`,
+    data: { statusId: s.id },
+  })
+  const columnTickets = tickets
+    .filter((t) => t.statusId === s.id)
+    .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
+  return (
+    <section
+      ref={ref}
+      className={`column ${isDropTarget ? 'drop-target' : ''}`}
+    >
+      <header>
+        <i className={`status-dot s${i}`} />
+        <h3>{s.name}</h3>
+        <em>{columnTickets.length}</em>
+      </header>
+      <div>
+        {columnTickets.map((t, index) => (
+          <Card
+            key={t.id}
+            t={t}
+            boot={boot}
+            open={open}
+            move={move}
+            index={index}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+function DragPreview({ tickets }: { tickets: Ticket[] }) {
+  const operation = useDragOperation()
+  const ticket = tickets.find((item) => item.id === operation.source?.id)
+  return ticket ? (
+    <div className="drag-preview" aria-hidden>
+      {ticket.identifier} · {ticket.title}
+    </div>
+  ) : null
 }
 function List({
   tickets,
@@ -829,7 +992,9 @@ function Detail({
         <span className={`priority ${ticket.priority}`}>
           {ticket.priority.toUpperCase()}
         </span>
-        <button onClick={() => setEdit(true)}>Edit ticket</button>
+        {boot.actor.role !== 'viewer' && (
+          <button onClick={() => setEdit(true)}>Edit ticket</button>
+        )}
       </div>
       <h1>{ticket.title}</h1>
       <p className="description">

@@ -570,3 +570,8 @@ Activity history is an audit record; it is not itself used as a mutable job queu
 ## 23. Product-owner decision register
 
 Recommended MVP defaults are: exact verified-email invitations; the session policy in section 11; members self-claim/unassign only; 15-minute author comment edits; workspace-visible projects; project archive/restore by owner/admin; in-app notifications for assignment, mention, blocking, and comments on assigned/reported work; audited administrative first-owner bootstrap; no routine purge until retention is approved; target RPO 15 minutes/RTO 4 hours subject to Neon plan; same-region Neon/Vercel chosen before launch; no staging until production readiness unless required; structured Vercel logs plus an owner-selected error provider; and owner-designated release managers. Commercial/provider choices remain unresolved in the product specification and deployment plan.
+# Phase 2 authentication and interaction
+
+Better Auth is integrated through `/api/auth/[...all]` with the existing Drizzle user model plus credential accounts, sessions, and verification records. Public signup and email login routes are disabled. A server-only account-creation instance is callable only behind workspace authorization; it is never mounted as a public route. Session resolution produces an `ActorContext` from the current database membership and services enforce capabilities. The former seeded-owner resolver has been removed.
+
+The board uses the current Dnd Kit React adapter. A drop sends stable neighbor intent and an expected version. The repository locks the affected rows, validates workspace/status membership, normalizes integer positions, increments the moved ticket version, and appends activity in one transaction.

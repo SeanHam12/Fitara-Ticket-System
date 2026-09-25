@@ -298,3 +298,6 @@ A feature is incomplete until it has, at appropriate layers:
 - Required CI checks passing.
 
 Mandatory concurrency coverage includes simultaneous ticket allocation (unique and rollback-safe), move collision/rebalance, idempotent replay/hash mismatch, optimistic conflict, invitation acceptance, and two simultaneous last-owner mutations. Session cases cover account and membership suspension/removal revoking otherwise-valid sessions. Migration tests apply from empty and from the prior release and rehearse forward-fix recovery without SQLite.
+# Phase 2 coverage
+
+Unit tests cover the complete role/capability matrix and generic login-error UI. Component coverage retains board/list/detail interaction. PostgreSQL transaction, authentication, suspension, ordering, and cross-workspace cases belong to the isolated integration suite and are skipped—not reported as passed—when `TEST_DATABASE_URL` is unavailable. The shared Neon demo database is never an automated test target.

@@ -23,12 +23,15 @@ import {
   users,
   workspaces,
 } from '@/server/db/schema'
-import type { ActorContext } from '@/server/auth/demo-actor'
+import type { ActorContext } from '@/server/auth/actor'
 import type { z } from 'zod'
 import type {
+  createProjectSchema,
   createTicketSchema,
+  updateProjectSchema,
   updateTicketSchema,
 } from '@/server/services/schemas'
+import { calculateColumnMove } from './ticket-ordering'
 
 export type TicketFilters = {
   projectId?: string
@@ -74,6 +77,8 @@ type Summary = {
   updatedAt: Date
 }
 type CreateInput = z.infer<typeof createTicketSchema>
+type CreateProjectInput = z.infer<typeof createProjectSchema>
+type UpdateProjectInput = z.infer<typeof updateProjectSchema>
 type UpdateInput = z.infer<typeof updateTicketSchema> & {
   title?: string
   description?: string
@@ -135,14 +140,14 @@ export class WorkRepository {
       members: people,
     }
   }
-  async listProjects(actor: ActorContext) {
+  async listProjects(actor: ActorContext, includeArchived = false) {
     return this.db
       .select()
       .from(projects)
       .where(
         and(
           eq(projects.workspaceId, actor.workspaceId),
-          isNull(projects.archivedAt),
+          ...(includeArchived ? [] : [isNull(projects.archivedAt)]),
         ),
       )
       .orderBy(asc(projects.name))
@@ -157,6 +162,77 @@ export class WorkRepository {
         )
         .limit(1)
     )[0]
+  }
+  async createProject(actor: ActorContext, input: CreateProjectInput) {
+    return this.db.transaction(async (tx) => {
+      const [project] = await tx
+        .insert(projects)
+        .values({ ...input, workspaceId: actor.workspaceId })
+        .returning()
+      await tx.insert(activityEvents).values({
+        workspaceId: actor.workspaceId,
+        projectId: project.id,
+        actorMembershipId: actor.membershipId,
+        action: 'project.created',
+        metadata: { projectId: project.id },
+        correlationId: actor.requestId,
+      })
+      return project
+    })
+  }
+  async updateProject(
+    actor: ActorContext,
+    id: string,
+    input: UpdateProjectInput,
+  ) {
+    return this.db.transaction(async (tx) => {
+      const { expectedVersion, archived, ...changes } = input
+      const [project] = await tx
+        .update(projects)
+        .set({
+          ...changes,
+          ...(archived === undefined
+            ? {}
+            : { archivedAt: archived ? new Date() : null }),
+          version: sql`${projects.version}+1`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(projects.workspaceId, actor.workspaceId),
+            eq(projects.id, id),
+            eq(projects.version, expectedVersion),
+          ),
+        )
+        .returning()
+      if (!project) {
+        const [exists] = await tx
+          .select({ id: projects.id })
+          .from(projects)
+          .where(
+            and(
+              eq(projects.workspaceId, actor.workspaceId),
+              eq(projects.id, id),
+            ),
+          )
+          .limit(1)
+        return { kind: exists ? 'conflict' : 'missing' } as const
+      }
+      await tx.insert(activityEvents).values({
+        workspaceId: actor.workspaceId,
+        projectId: project.id,
+        actorMembershipId: actor.membershipId,
+        action:
+          archived === true
+            ? 'project.archived'
+            : archived === false
+              ? 'project.restored'
+              : 'project.updated',
+        metadata: { fields: Object.keys(changes) },
+        correlationId: actor.requestId,
+      })
+      return { kind: 'ok', project } as const
+    })
   }
   async listTickets(actor: ActorContext, f: TicketFilters) {
     const conditions = [
@@ -433,22 +509,86 @@ export class WorkRepository {
     id: string,
     statusId: string,
     expectedVersion: number,
+    beforeTicketId?: string | null,
   ) {
-    const max = (
-      await this.db
-        .select({ max: sql<number>`coalesce(max(${tickets.position}),0)` })
+    return this.db.transaction(async (tx) => {
+      const [moving] = await tx
+        .select()
+        .from(tickets)
+        .where(
+          and(eq(tickets.workspaceId, actor.workspaceId), eq(tickets.id, id)),
+        )
+        .limit(1)
+        .for('update')
+      if (!moving) return { kind: 'missing' } as const
+      if (moving.version !== expectedVersion)
+        return { kind: 'conflict' } as const
+      const [targetStatus] = await tx
+        .select({ id: statuses.id })
+        .from(statuses)
+        .where(
+          and(
+            eq(statuses.workspaceId, actor.workspaceId),
+            eq(statuses.id, statusId),
+          ),
+        )
+        .limit(1)
+      if (!targetStatus) return { kind: 'missing' } as const
+
+      const affectedStatuses =
+        moving.statusId === statusId ? [statusId] : [moving.statusId, statusId]
+      const rows = await tx
+        .select({ id: tickets.id, statusId: tickets.statusId })
         .from(tickets)
         .where(
           and(
             eq(tickets.workspaceId, actor.workspaceId),
-            eq(tickets.statusId, statusId),
+            inArray(tickets.statusId, affectedStatuses),
+            isNull(tickets.archivedAt),
           ),
         )
-    )[0].max
-    return this.updateTicket(actor, id, {
-      expectedVersion,
-      statusId,
-      position: Number(max) + 1000,
+        .orderBy(asc(tickets.position), asc(tickets.id))
+        .for('update')
+      const order = calculateColumnMove(
+        rows,
+        id,
+        moving.statusId,
+        statusId,
+        beforeTicketId,
+      )
+      if (!order) return { kind: 'missing' } as const
+      const { source, target } = order
+
+      for (const [index, ticketId] of source.entries())
+        await tx
+          .update(tickets)
+          .set({ position: (index + 1) * 1000 })
+          .where(eq(tickets.id, ticketId))
+      for (const [index, ticketId] of target.entries())
+        await tx
+          .update(tickets)
+          .set(
+            ticketId === id
+              ? {
+                  statusId,
+                  position: (index + 1) * 1000,
+                  version: sql`${tickets.version}+1`,
+                  updatedAt: new Date(),
+                }
+              : { position: (index + 1) * 1000 },
+          )
+          .where(eq(tickets.id, ticketId))
+      await tx.insert(activityEvents).values({
+        workspaceId: actor.workspaceId,
+        projectId: moving.projectId,
+        ticketId: id,
+        actorMembershipId: actor.membershipId,
+        action:
+          moving.statusId === statusId ? 'ticket.reordered' : 'ticket.moved',
+        metadata: { fromStatusId: moving.statusId, toStatusId: statusId },
+        correlationId: actor.requestId,
+      })
+      return { kind: 'ok' } as const
     })
   }
   async activity(actor: ActorContext, ticketId: string) {

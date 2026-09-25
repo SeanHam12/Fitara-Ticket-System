@@ -235,3 +235,15 @@ describe.each([
 - Cross-workspace parent, label, status, type, relation, assignee, and saved-view IDs are rejected.
 - Integration/automation principals cannot call owner-only services.
 - API, Server Action, and Server Component entry points produce the same policy result.
+# Phase 2 capability matrix
+
+| Capability | Owner | Admin | Member | Viewer |
+| --- | --- | --- | --- | --- |
+| Read workspace work | Yes | Yes | Yes | Yes |
+| Create/edit/assign/move tickets | Yes | Yes | Yes | No |
+| Create/update/archive projects | Yes | Yes | No | No |
+| Create accounts | Any role | Member/viewer | No | No |
+| Manage memberships | Yes | Member/viewer only | No | No |
+| Manage workspace settings | Yes | No | No | No |
+
+The service layer is authoritative. Admins cannot manage owners or promote users above viewer/member. Owners cannot demote or suspend the final active owner; affected owner rows are locked before this invariant is checked.

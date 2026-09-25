@@ -1,38 +1,49 @@
-# Fitara Work — demo vertical slice
+# Fitara Work
 
-Fitara Work is an internal project and ticket-management experience built with Next.js 16, React 19, PostgreSQL, Drizzle, and Tailwind CSS 4. This branch is a **demo environment**, not production authentication or authorization.
+Fitara Work is an internal project and ticket-management application built with Next.js 16, React 19, PostgreSQL, Drizzle, Better Auth, and Dnd Kit.
 
-## Requirements
-
-- Node.js 20 LTS or a Vercel-supported later LTS
-- npm 10+
-- An isolated PostgreSQL database (local or disposable Neon branch)
+Phase 2 uses temporary MVP username/password authentication. Email is retained only as an internal account field. Public signup, OAuth, MFA, invitations, and email recovery are intentionally deferred. Workspace roles are application data and are not Better Auth administrative roles.
 
 ## Local setup
 
+Use Node.js 20+ and an isolated PostgreSQL database. Copy `.env.example` to the ignored `.env.local`, replace every placeholder privately, then run:
+
 ```bash
-cp .env.example .env.local
 npm install
 npm run db:migrate
-npm run db:seed
+npm run db:bootstrap-owner
 npm run dev
 ```
 
-Open `http://localhost:3000`. Seed is explicit and idempotent. It refuses unless `DEMO_MODE=true`, `APP_ENV` is `development` or `demo`, and the URL does not look like production.
+Open `http://localhost:3000`. Remove the three `BOOTSTRAP_OWNER_*` values after the idempotent owner bootstrap succeeds. Do not rerun the Phase 1 seed to create authenticated users.
 
 ## Environment
 
-| Variable                 | Purpose                                                   |
-| ------------------------ | --------------------------------------------------------- |
-| `DATABASE_URL`           | Pooled PostgreSQL runtime connection; server-only         |
-| `DATABASE_MIGRATION_URL` | Direct/admin migration connection; server-only            |
-| `APP_ENV`                | `development`, `test`, `preview`, `demo`, or `production` |
-| `NEXT_PUBLIC_APP_ENV`    | Non-sensitive environment label                           |
-| `DEMO_MODE`              | Must be `true` for the seeded server-side demo owner      |
+| Variable                   | Purpose                                                |
+| -------------------------- | ------------------------------------------------------ |
+| `DATABASE_URL`             | Pooled PostgreSQL runtime connection; server-only      |
+| `DATABASE_MIGRATION_URL`   | Direct migration connection; server-only               |
+| `APP_ENV`                  | Application environment                                |
+| `NEXT_PUBLIC_APP_ENV`      | Non-sensitive environment label only                   |
+| `DEMO_MODE`                | Demo-data guard; never grants identity                 |
+| `BETTER_AUTH_SECRET`       | At least 32 random characters; server-only             |
+| `BETTER_AUTH_URL`          | Canonical application origin                           |
+| `BOOTSTRAP_OWNER_USERNAME` | One-time private owner username                        |
+| `BOOTSTRAP_OWNER_EMAIL`    | One-time private internal email                        |
+| `BOOTSTRAP_OWNER_PASSWORD` | One-time private owner password, 12–128 characters     |
+| `TEST_DATABASE_URL`        | Optional isolated PostgreSQL integration-test database |
 
-Never use production data or credentials. The browser cannot select identity, workspace, or role. `DEMO_MODE=false` fails closed instead of granting a demo owner.
+No database or authentication credential may use a `NEXT_PUBLIC_*` name.
 
-## Commands
+## Security and behavior
+
+- Better Auth owns credential hashing, generic sign-in failure behavior, HTTP-only cookies, CSRF/origin checks, database sessions, and login rate limiting.
+- Usernames are trimmed, normalized to lowercase, compared uniquely without case sensitivity, and limited to 3–32 letters, numbers, periods, underscores, or hyphens.
+- The server resolves the current active workspace membership on every protected request. There is no demo-owner fallback.
+- Owner, admin, member, and viewer permissions are enforced through reusable server capabilities. Suspension revokes database sessions. The last-owner invariant is locked and checked transactionally.
+- Board movement accepts status and neighbor intent—not a client rank—and recalculates spaced integer positions in a transaction. Dnd Kit provides pointer, touch, keyboard, overlay, and reduced-motion behavior; the status menu remains available.
+
+## Verification
 
 ```bash
 npm run format:check
@@ -40,22 +51,7 @@ npm run lint
 npm run typecheck
 npm run test
 npm run build
-npm run db:generate
-npm run db:migrate
-npm run db:seed
+git diff --check
 ```
 
-## Vercel + Neon demo deployment
-
-1. Create a disposable Neon development/demo project or branch in the same region as Vercel.
-2. Copy its pooled URL to Vercel `DATABASE_URL` and direct URL to `DATABASE_MIGRATION_URL`; scope both only to the demo environment.
-3. Set `APP_ENV=demo`, `NEXT_PUBLIC_APP_ENV=demo`, and `DEMO_MODE=true`.
-4. Run `npm run db:migrate` and `npm run db:seed` manually from a trusted workstation or protected release job.
-5. Import the repository in Vercel and deploy. Builds never migrate or seed.
-6. Enable Vercel deployment protection for any publicly addressable demo.
-
-To disable demo identity, set `DEMO_MODE=false` and redeploy. The application then denies access until Phase 2 replaces `server/auth/demo-actor.ts` with Better Auth and invitation-backed membership resolution.
-
-## Limitations
-
-The demo has one server-selected owner and workspace. It does not implement OAuth, invitations, full RBAC, comments, notifications, attachments, integrations, drag-and-drop, or production rate limiting. Status movement uses safe integer append positions as a temporary Phase 1 strategy. See `docs/` for the production architecture.
+Integration tests skip when `TEST_DATABASE_URL` is absent; they must never use the shared demo database. Builds do not migrate, bootstrap, seed, or deploy.

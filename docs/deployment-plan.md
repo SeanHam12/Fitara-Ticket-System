@@ -333,3 +333,6 @@ Design kill switches/operational controls for later high-risk integrations, auto
 - Feature kill-switch mechanism.
 
 Recommended defaults pending approval: paid Neon capability with PITR, Vercel and Neon in the same supported region, 15-minute RPO, four-hour RTO, optional staging, structured Vercel logs plus a selected error provider, and named owner-designated production releasers. Preview databases are isolated branches with preview-only variables, migrations, synthetic seeds, expiry/cleanup, and no production OAuth secrets; untrusted fork previews disable auth or use non-sensitive test credentials. Preview builds never migrate production.
+# Phase 2 environment
+
+Protected deployments additionally require `BETTER_AUTH_SECRET` and canonical `BETTER_AUTH_URL`. Bootstrap credentials are supplied only to the trusted one-time `npm run db:bootstrap-owner` command and removed afterward. `DATABASE_URL` stays pooled for runtime and `DATABASE_MIGRATION_URL` stays direct for migrations. Public signup, OAuth, MFA, and recovery are not configured. Builds never apply migrations or bootstrap accounts.

@@ -14,9 +14,14 @@
     "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx server/db/migrate.ts",
-    "db:seed": "tsx server/db/seed/index.ts"
+    "db:seed": "tsx server/db/seed/index.ts",
+    "db:bootstrap-owner": "tsx server/db/bootstrap-owner.ts"
   },
   "dependencies": {
+    "@dnd-kit/helpers": "^0.5.0",
+    "@dnd-kit/react": "^0.5.0",
+    "@opentelemetry/api": "^1.9.1",
+    "better-auth": "^1.7.6",
     "drizzle-orm": "^0.45.3",
     "next": "16.3.6",
     "pg": "^8.23.0",
@@ -27,6 +32,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
@@ -42,6 +48,6 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }

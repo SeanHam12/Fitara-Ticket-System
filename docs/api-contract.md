@@ -477,3 +477,15 @@ sequenceDiagram
 ## 13. Future integration access
 
 Future mobile clients use `/api/v1` with a separately designed OAuth/token scheme. GitHub webhooks live at `/api/webhooks/github`, verify signatures against the raw body, map installation to workspace, deduplicate delivery IDs, enqueue durable work, and return quickly. They call domain services using a scoped machine principal; they do not write repositories directly.
+# Phase 2 endpoints
+
+- `POST /api/auth/sign-in/username`: username/password login (generic invalid-credential response).
+- `POST /api/auth/sign-out`: revoke the current session.
+- `POST /api/auth/change-password`: current-password protected password change.
+- `GET|POST /api/v1/memberships`: authorized list/account creation.
+- `PATCH /api/v1/memberships/:membershipId`: authorized role or active/suspended state change.
+- `POST /api/v1/projects` and `PATCH /api/v1/projects/:projectId`: capability-checked project creation, editing, archive, and restore.
+- Membership updates may issue a temporary password. Better Auth's configured password hasher is used, sessions are revoked, and the user must change it at next login.
+- `POST /api/v1/tickets/:ticketId/move`: `{statusId, beforeTicketId?, expectedVersion}`. The server computes positions and returns the authoritative ticket.
+
+Protected application APIs return `401` without a session, `403` without an active membership/capability, `409` for optimistic conflicts, and problem JSON for failures.

@@ -9,6 +9,8 @@ const schema = z.object({
     .optional(),
   APP_ENV: z.enum(['development', 'test', 'preview', 'demo', 'production']),
   DEMO_MODE: z.enum(['true', 'false']).transform((v) => v === 'true'),
+  BETTER_AUTH_SECRET: z.string().min(32),
+  BETTER_AUTH_URL: z.string().url(),
 })
 
 export function getServerEnv() {
@@ -17,5 +19,7 @@ export function getServerEnv() {
     DATABASE_MIGRATION_URL: process.env.DATABASE_MIGRATION_URL,
     APP_ENV: process.env.APP_ENV,
     DEMO_MODE: process.env.DEMO_MODE,
+    BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
   })
 }

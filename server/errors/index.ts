@@ -13,6 +13,8 @@ export const notFound = (message = 'The requested resource was not found.') =>
 export const forbidden = (
   message = 'You do not have access to this resource.',
 ) => new AppError(403, 'FORBIDDEN', message)
+export const unauthorized = (message = 'Sign in to continue.') =>
+  new AppError(401, 'UNAUTHORIZED', message)
 export const conflict = (
   message = 'The resource changed. Refresh and try again.',
 ) => new AppError(409, 'VERSION_CONFLICT', message)
