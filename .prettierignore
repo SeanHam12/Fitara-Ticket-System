@@ -1,0 +1,6 @@
+.next
+node_modules
+coverage
+server/db/migrations/meta
+package-lock.json
+docs

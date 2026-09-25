@@ -1,0 +1,62 @@
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { WorkspaceApp } from './workspace-app'
+const id = (n: number) => `${n}0000000-0000-4000-8000-000000000001`
+const boot = {
+  actor: { name: 'Alex Morgan', membershipId: id(3) },
+  workspace: { id: id(1), name: 'Fitara Demo' },
+  projects: [{ id: id(4), name: 'Fitara Work' }],
+  statuses: [
+    { id: id(5), name: 'Triage' },
+    { id: id(6), name: 'In Progress' },
+    { id: id(7), name: 'Review' },
+    { id: id(8), name: 'Done' },
+  ],
+  labels: [],
+  members: [{ id: id(3), name: 'Alex Morgan' }],
+}
+const ticket = {
+  id: id(9),
+  identifier: 'FIT-1',
+  title: 'Build the demo',
+  description: 'A real ticket',
+  type: 'task',
+  priority: 'p2',
+  statusId: id(5),
+  projectId: id(4),
+  assigneeMembershipId: id(3),
+  position: 1000,
+  blocked: false,
+  dueDate: null,
+  version: 1,
+  labels: [],
+}
+afterEach(() => vi.unstubAllGlobals())
+describe('workspace interaction', () => {
+  it('switches board/list and opens a ticket drawer', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => ({
+          data: url.includes('bootstrap')
+            ? boot
+            : url.endsWith(id(9))
+              ? { ...ticket, activity: [] }
+              : [ticket],
+        }),
+      })),
+    )
+    render(<WorkspaceApp />)
+    expect(await screen.findByText('Your work, in focus.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /list/i }))
+    expect(
+      screen.getByRole('columnheader', { name: 'Ticket' }),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Build the demo'))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    await userEvent.click(screen.getByRole('button', { name: /close drawer/i }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})
