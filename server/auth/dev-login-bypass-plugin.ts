@@ -2,6 +2,7 @@ import { and, eq, isNotNull } from 'drizzle-orm'
 import { createAuthEndpoint } from '@better-auth/core/api'
 import { setSessionCookie } from 'better-auth/cookies'
 import { getDevLoginBypassConfig } from '@/server/auth/dev-login-bypass'
+import { isLoopbackHostname } from '@/server/auth/dev-login-bypass'
 import { getDb } from '@/server/db/client-core'
 import { memberships, users } from '@/server/db/schema'
 
@@ -15,6 +16,12 @@ export function devLoginBypassPlugin() {
         async (ctx) => {
           const config = getDevLoginBypassConfig()
           if (!config) return ctx.json({ enabled: false }, { status: 404 })
+          const requestUrl = ctx.request ? new URL(ctx.request.url) : null
+          const forwardedHost = ctx.request?.headers.get('x-forwarded-host')
+          const requestHost =
+            forwardedHost?.split(':')[0] ?? requestUrl?.hostname
+          if (!requestHost || !isLoopbackHostname(requestHost))
+            return ctx.json({ enabled: false }, { status: 404 })
 
           const [record] = await getDb()
             .select({ id: users.id })

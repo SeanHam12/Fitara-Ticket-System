@@ -7,6 +7,7 @@ import {
   ilike,
   inArray,
   isNull,
+  isNotNull,
   or,
   sql,
 } from 'drizzle-orm'
@@ -108,6 +109,11 @@ type UpdateInput = z.infer<typeof updateTicketSchema> & {
   attachments?: string
   githubDevelopment?: string
   position?: number
+}
+type ArchiveInput = {
+  ticketIds?: string[]
+  all?: true
+  expectedCount: number
 }
 
 export class WorkRepository {
@@ -630,5 +636,128 @@ export class WorkRepository {
       )
       .orderBy(desc(activityEvents.createdAt))
       .limit(8)
+  }
+  async listTrashedTickets(actor: ActorContext) {
+    const selection = {
+      id: tickets.id,
+      identifier: tickets.identifier,
+      title: tickets.title,
+      type: tickets.type,
+      priority: tickets.priority,
+      projectId: tickets.projectId,
+      archivedAt: tickets.archivedAt,
+      version: tickets.version,
+    }
+    const [active, trashed] = await Promise.all([
+      this.db
+        .select(selection)
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.workspaceId, actor.workspaceId),
+            isNull(tickets.archivedAt),
+          ),
+        )
+        .orderBy(asc(tickets.identifier)),
+      this.db
+        .select(selection)
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.workspaceId, actor.workspaceId),
+            isNotNull(tickets.archivedAt),
+          ),
+        )
+        .orderBy(desc(tickets.archivedAt), asc(tickets.identifier)),
+    ])
+    return { active, trashed }
+  }
+  async archiveTickets(actor: ActorContext, input: ArchiveInput) {
+    return this.db.transaction(async (tx) => {
+      const conditions = [
+        eq(tickets.workspaceId, actor.workspaceId),
+        isNull(tickets.archivedAt),
+      ]
+      if (!input.all && input.ticketIds)
+        conditions.push(inArray(tickets.id, input.ticketIds))
+      const targets = await tx
+        .select({ id: tickets.id, projectId: tickets.projectId })
+        .from(tickets)
+        .where(and(...conditions))
+        .orderBy(asc(tickets.id))
+        .for('update')
+      if (targets.length !== input.expectedCount)
+        return { kind: 'conflict', count: targets.length } as const
+      if (!targets.length) return { kind: 'ok', count: 0 } as const
+      const archivedAt = new Date()
+      await tx
+        .update(tickets)
+        .set({
+          archivedAt,
+          updatedAt: archivedAt,
+          version: sql`${tickets.version}+1`,
+        })
+        .where(
+          inArray(
+            tickets.id,
+            targets.map((ticket) => ticket.id),
+          ),
+        )
+      await tx.insert(activityEvents).values(
+        targets.map((ticket) => ({
+          workspaceId: actor.workspaceId,
+          projectId: ticket.projectId,
+          ticketId: ticket.id,
+          actorMembershipId: actor.membershipId,
+          action: 'ticket.archived',
+          metadata: { bulk: targets.length > 1 },
+          correlationId: actor.requestId,
+        })),
+      )
+      return { kind: 'ok', count: targets.length } as const
+    })
+  }
+  async restoreTickets(actor: ActorContext, input: { ticketIds: string[] }) {
+    return this.db.transaction(async (tx) => {
+      const targets = await tx
+        .select({ id: tickets.id, projectId: tickets.projectId })
+        .from(tickets)
+        .where(
+          and(
+            eq(tickets.workspaceId, actor.workspaceId),
+            isNotNull(tickets.archivedAt),
+            inArray(tickets.id, input.ticketIds),
+          ),
+        )
+        .orderBy(asc(tickets.id))
+        .for('update')
+      if (!targets.length) return { count: 0 }
+      const restoredAt = new Date()
+      await tx
+        .update(tickets)
+        .set({
+          archivedAt: null,
+          updatedAt: restoredAt,
+          version: sql`${tickets.version}+1`,
+        })
+        .where(
+          inArray(
+            tickets.id,
+            targets.map((ticket) => ticket.id),
+          ),
+        )
+      await tx.insert(activityEvents).values(
+        targets.map((ticket) => ({
+          workspaceId: actor.workspaceId,
+          projectId: ticket.projectId,
+          ticketId: ticket.id,
+          actorMembershipId: actor.membershipId,
+          action: 'ticket.restored',
+          metadata: { bulk: targets.length > 1 },
+          correlationId: actor.requestId,
+        })),
+      )
+      return { count: targets.length }
+    })
   }
 }

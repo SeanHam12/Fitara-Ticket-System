@@ -35,6 +35,20 @@ Open `http://localhost:3000`. Remove the three `BOOTSTRAP_OWNER_*` values after 
 
 No database or authentication credential may use a `NEXT_PUBLIC_*` name.
 
+### Local demo access
+
+Interactive sign-in may be skipped only when all of the following are true:
+
+- `APP_ENV=development`
+- `DEMO_MODE=true`
+- `DEV_LOGIN_BYPASS=true`
+- `BETTER_AUTH_URL` uses `localhost`, `127.0.0.1`, or `::1`
+- the incoming request host is also loopback
+
+In that mode Fitara Work creates a normal database session for the existing demo owner and records mutations as that clearly identified account. It never impersonates a user shown in the Users list. Shared previews, Vercel deployments, and non-loopback hosts fail closed and require individual Better Auth sign-in.
+
+Ticket deletion is reversible: owner/admin actions set `tickets.archived_at`, preserve keys and activity, and expose restore controls. Do not use the application database for destructive test scenarios.
+
 ## Security and behavior
 
 - Better Auth owns credential hashing, generic sign-in failure behavior, HTTP-only cookies, CSRF/origin checks, database sessions, and login rate limiting.

@@ -68,8 +68,15 @@ describe('workspace interaction', () => {
       expect(screen.getByRole('combobox', { name: filter })).toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Priority' })).toBeNull()
     expect(
-      screen.getByRole('link', { name: /workspace settings/i }),
+      screen.getByRole('link', { name: /workspace configuration/i }),
     ).toHaveAttribute('href', '/settings/workspace')
+    expect(screen.getByRole('link', { name: 'Users' })).toHaveAttribute(
+      'href',
+      '/settings/members',
+    )
+    expect(
+      screen.getByRole('link', { name: 'Delete tickets' }),
+    ).toHaveAttribute('href', '/settings/tickets')
     expect(
       screen.getByRole('link', { name: 'View 1 open tickets' }),
     ).toHaveAttribute('href', '/tickets/open')
@@ -98,6 +105,24 @@ describe('workspace interaction', () => {
       }),
     )
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    expect(
+      screen.getByRole('heading', { name: 'Overview' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Done when' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/completion tracking is not implemented/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Work & blockers' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Discussion & activity' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Resources' }),
+    ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /close drawer/i }))
     await userEvent.click(screen.getByRole('button', { name: /list/i }))
     expect(
@@ -107,5 +132,5 @@ describe('workspace interaction', () => {
     await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
     await userEvent.click(screen.getByRole('button', { name: /close drawer/i }))
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-  })
+  }, 10_000)
 })

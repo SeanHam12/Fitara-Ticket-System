@@ -1,14 +1,18 @@
 'use client'
-import { FormEvent, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { authClient } from '@/lib/auth-client'
 import { useRouter } from 'next/navigation'
 
 export function LoginForm({
   sessionExpired = false,
   devBypassEnabled = false,
+  autoDemoAccess = false,
+  nextPath = '/',
 }: {
   sessionExpired?: boolean
   devBypassEnabled?: boolean
+  autoDemoAccess?: boolean
+  nextPath?: string
 }) {
   const router = useRouter()
   const [error, setError] = useState('')
@@ -25,10 +29,10 @@ export function LoginForm({
     })
     setLoading(null)
     if (result.error) setError('Invalid username or password.')
-    else router.push('/')
+    else router.push(nextPath)
   }
 
-  async function bypass() {
+  const bypass = useCallback(async () => {
     setLoading('bypass')
     setError('')
     const response = await fetch('/api/auth/dev-login-bypass', {
@@ -38,8 +42,12 @@ export function LoginForm({
     })
     setLoading(null)
     if (!response.ok) setError('Development bypass is unavailable.')
-    else router.push('/')
-  }
+    else router.push(nextPath)
+  }, [nextPath, router])
+
+  useEffect(() => {
+    if (autoDemoAccess) void Promise.resolve().then(bypass)
+  }, [autoDemoAccess, bypass])
 
   return (
     <main className="auth-page">
@@ -58,7 +66,11 @@ export function LoginForm({
             </button>
           )}
         </div>
-        <p>Use your workspace username and password.</p>
+        <p>
+          {autoDemoAccess
+            ? 'Opening the loopback-only local demo…'
+            : 'Use your workspace username and password.'}
+        </p>
         {sessionExpired && (
           <div className="error-banner" role="status">
             Your session expired. Sign in again.

@@ -5,11 +5,13 @@ import {
   WorkRepository,
   type TicketFilters,
 } from '@/server/repositories/work-repository'
-import { conflict, notFound } from '@/server/errors'
+import { conflict, forbidden, notFound } from '@/server/errors'
 import {
   createProjectSchema,
   createTicketSchema,
   moveTicketSchema,
+  restoreTicketsSchema,
+  trashTicketsSchema,
   updateProjectSchema,
   updateTicketSchema,
 } from './schemas'
@@ -71,6 +73,26 @@ export class WorkService {
       'assigneeMembershipId' in body
     )
       requireCapability(actor, 'ticket.assign')
+    if (
+      actor.role === 'member' &&
+      typeof body === 'object' &&
+      body !== null &&
+      'assigneeMembershipId' in body
+    ) {
+      const current = await this.repo.getTicket(actor, id)
+      if (!current) throw notFound('Ticket not found.')
+      const next = body.assigneeMembershipId
+      const allowed =
+        (current.assigneeMembershipId === null &&
+          next === actor.membershipId) ||
+        (current.assigneeMembershipId === actor.membershipId &&
+          next === null) ||
+        current.assigneeMembershipId === next
+      if (!allowed)
+        throw forbidden(
+          'Members may only claim unassigned work or unassign themselves.',
+        )
+    }
     const result = await this.repo.updateTicket(
       actor,
       id,
@@ -93,5 +115,23 @@ export class WorkService {
     if (result.kind === 'missing') throw notFound('Ticket or status not found.')
     if (result.kind === 'conflict') throw conflict()
     return this.ticket(actor, id)
+  }
+  trash(actor: ActorContext) {
+    requireCapability(actor, 'ticket.archive')
+    return this.repo.listTrashedTickets(actor)
+  }
+  async archive(actor: ActorContext, body: unknown) {
+    requireCapability(actor, 'ticket.archive')
+    const input = trashTicketsSchema.parse(body)
+    const result = await this.repo.archiveTickets(actor, input)
+    if (result.kind === 'conflict')
+      throw conflict(
+        'The ticket count changed. Review the list and confirm again.',
+      )
+    return result
+  }
+  restore(actor: ActorContext, body: unknown) {
+    requireCapability(actor, 'ticket.archive')
+    return this.repo.restoreTickets(actor, restoreTicketsSchema.parse(body))
   }
 }

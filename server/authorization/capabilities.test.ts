@@ -17,6 +17,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
     'ticket.update': true,
     'ticket.assign': true,
     'ticket.move': true,
+    'ticket.archive': true,
   },
   admin: {
     'workspace.read': true,
@@ -32,6 +33,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
     'ticket.update': true,
     'ticket.assign': true,
     'ticket.move': true,
+    'ticket.archive': true,
   },
   member: {
     'workspace.read': true,
@@ -47,6 +49,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
     'ticket.update': true,
     'ticket.assign': true,
     'ticket.move': true,
+    'ticket.archive': false,
   },
   viewer: {
     'workspace.read': true,
@@ -62,6 +65,7 @@ const matrix: Record<WorkspaceRole, Record<Capability, boolean>> = {
     'ticket.update': false,
     'ticket.assign': false,
     'ticket.move': false,
+    'ticket.archive': false,
   },
 }
 describe('workspace capability matrix', () => {

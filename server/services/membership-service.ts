@@ -154,10 +154,10 @@ export class MembershipService {
       if (!target) throw notFound('Membership not found.')
       if (
         actor.role === 'admin' &&
-        (target.role === 'owner' ||
+        (['owner', 'admin'].includes(target.role) ||
           (input.role && !['member', 'viewer'].includes(input.role)))
       )
-        throw forbidden('Admins may manage member and viewer roles only.')
+        throw forbidden('Admins may manage member and viewer accounts only.')
       const removesOwner =
         target.role === 'owner' &&
         ((input.role && input.role !== 'owner') || input.state === 'suspended')

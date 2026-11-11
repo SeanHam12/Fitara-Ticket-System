@@ -1,5 +1,6 @@
 import { AppError } from './errors'
 import { ZodError } from 'zod'
+import { forbidden } from './errors'
 
 export function ok(data: unknown, status = 200, requestId?: string) {
   return Response.json(
@@ -50,4 +51,12 @@ export async function handle(fn: (requestId: string) => Promise<Response>) {
       })
     return problem(error, id)
   }
+}
+
+export function requireSameOrigin(request: Request) {
+  const origin = request.headers.get('origin')
+  const host =
+    request.headers.get('x-forwarded-host') ?? request.headers.get('host')
+  if (!origin || !host || new URL(origin).host !== host)
+    throw forbidden('This mutation must come from the Fitara Work origin.')
 }

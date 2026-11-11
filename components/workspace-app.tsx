@@ -290,10 +290,6 @@ export function WorkspaceApp({ ticketScope }: { ticketScope?: TicketScope }) {
             </p>
           </div>
           <div className="top-actions">
-            <span className="demo-badge">
-              <i />
-              Demo environment
-            </span>
             {boot.actor.role !== 'viewer' && (
               <button className="new-button" onClick={() => setCreate(true)}>
                 <I>＋</I>New ticket
@@ -483,7 +479,16 @@ function Sidebar({
         <span>⌄</span>
       </Link>
       <nav aria-label="Workspace">
-        <p>Workspace</p>
+        <div className="nav-section-heading">
+          <p>Workspace</p>
+          <Link
+            href="/settings/workspace"
+            aria-label="Workspace configuration"
+            title="Configure the current workspace"
+          >
+            +
+          </Link>
+        </div>
         <button
           className={!filters.status && !filters.project ? 'active' : ''}
           onClick={() =>
@@ -537,14 +542,14 @@ function Sidebar({
       <div className="sidebar-bottom">
         {(boot.actor.role === 'owner' || boot.actor.role === 'admin') && (
           <div className="settings-links">
-            <Link href="/settings/workspace">
-              <I>⚙</I>Workspace settings
-            </Link>
             <Link href="/settings/projects">
               <I>◆</I>Manage projects
             </Link>
             <Link href="/settings/members">
-              <I>♙</I>Manage members
+              <I>♙</I>Users
+            </Link>
+            <Link href="/settings/tickets">
+              <I>⌫</I>Delete tickets
             </Link>
           </div>
         )}
@@ -1269,80 +1274,157 @@ function Detail({
   return (
     <div className="ticket-detail">
       <div className="detail-heading">
-        <span className={`priority ${ticket.priority}`}>
-          {ticket.priority.toUpperCase()}
+        <span>
+          {ticket.identifier} · {ticket.type}
         </span>
         {boot.actor.role !== 'viewer' && (
           <button onClick={() => setEdit(true)}>Edit ticket</button>
         )}
       </div>
       <h1>{ticket.title}</h1>
-      <p className="description">
-        {ticket.description || 'No description yet.'}
-      </p>
-      <dl className="properties">
-        <div>
-          <dt>Status</dt>
-          <dd>{boot.statuses.find((x) => x.id === ticket.statusId)?.name}</dd>
-        </div>
-        <div>
-          <dt>Project</dt>
-          <dd>{boot.projects.find((x) => x.id === ticket.projectId)?.name}</dd>
-        </div>
-        <div>
-          <dt>Assignee</dt>
-          <dd>
-            {memberFor(boot, ticket.assigneeMembershipId)?.name ?? 'Unassigned'}
-          </dd>
-        </div>
-        <div>
-          <dt>Reporter</dt>
-          <dd>
-            {memberFor(boot, ticket.reporterMembershipId)?.name ?? 'Unknown'}
-          </dd>
-        </div>
-        <div>
-          <dt>Due date</dt>
-          <dd>{ticket.dueDate || 'None'}</dd>
-        </div>
-        <div>
-          <dt>Blocked</dt>
-          <dd>{ticket.blocked ? 'Yes' : 'No'}</dd>
-        </div>
-      </dl>
-      <div className="labels">
+      <div className="detail-chips" aria-label="Ticket classifications">
+        <span className="status-chip">
+          {boot.statuses.find((x) => x.id === ticket.statusId)?.name ??
+            'Unknown status'}
+        </span>
+        <span className={`priority ${ticket.priority}`}>
+          {ticket.priority.toUpperCase()}
+        </span>
         {ticket.labels.map((l) => (
-          <span className={`tag ${l.color}`} key={l.id}>
-            {l.name}
+          <span className="tag" key={l.id}>
+            Label: {l.name}
           </span>
         ))}
       </div>
-      <section className="activity">
-        <h2>Recent activity</h2>
-        {ticket.activity?.map((a) => (
-          <p key={a.id}>
-            <span>✓</span>
-            <b>{a.action.replaceAll('.', ' ')}</b>
-            <time>{new Date(a.createdAt).toLocaleDateString()}</time>
-          </p>
-        ))}
+      <section className="ticket-detail-section">
+        <h2>Overview</h2>
+        <p className="description">
+          {ticket.description || 'No description yet.'}
+        </p>
       </section>
-      <section className="later">
-        <div className="detail-section-heading">
-          <h2>Additional details</h2>
-          {boot.actor.role !== 'viewer' && (
-            <button onClick={() => setEdit(true)}>Edit details</button>
+      <section className="ticket-detail-section">
+        <h2>Done when</h2>
+        <p className="placeholder-note">
+          Text criteria only · completion tracking is not implemented
+        </p>
+        <TextLines
+          value={ticket.acceptanceCriteria}
+          empty="No acceptance criteria added."
+        />
+      </section>
+      <section className="ticket-detail-section">
+        <h2>Work &amp; blockers</h2>
+        <dl className="compact-properties">
+          <DetailRow
+            label="Subtask notes"
+            value={
+              ticket.subtasks ||
+              'No linked subtasks; this is currently plain text.'
+            }
+          />
+          <DetailRow
+            label="Dependency notes"
+            value={
+              ticket.dependencies ||
+              'No linked dependencies; this is currently plain text.'
+            }
+          />
+          <DetailRow label="Blocked" value={ticket.blocked ? 'Yes' : 'No'} />
+        </dl>
+      </section>
+      <section className="ticket-detail-section">
+        <h2>Details</h2>
+        <dl className="compact-properties">
+          <DetailRow
+            label="Project"
+            value={
+              boot.projects.find((x) => x.id === ticket.projectId)?.name ??
+              'Unknown project'
+            }
+          />
+          <DetailRow
+            label="Assignee"
+            value={
+              memberFor(boot, ticket.assigneeMembershipId)?.name ?? 'Unassigned'
+            }
+          />
+          <DetailRow
+            label="Reporter"
+            value={
+              memberFor(boot, ticket.reporterMembershipId)?.name ?? 'Unknown'
+            }
+          />
+          <DetailRow label="Due" value={ticket.dueDate || 'None'} />
+        </dl>
+      </section>
+      <section className="ticket-detail-section">
+        <h2>Discussion &amp; activity</h2>
+        {ticket.comments && (
+          <div className="plain-notes">
+            <h3>Discussion notes</h3>
+            <p className="placeholder-note">
+              Plain text · authored comments are not implemented
+            </p>
+            <p>{ticket.comments}</p>
+          </div>
+        )}
+        <div className="activity">
+          <h3>Activity events</h3>
+          {ticket.activity?.length ? (
+            ticket.activity.map((a) => (
+              <p key={a.id}>
+                <span>✓</span>
+                <b>{a.action.replaceAll('.', ' ')}</b>
+                <time>{new Date(a.createdAt).toLocaleDateString()}</time>
+              </p>
+            ))
+          ) : (
+            <p>No activity events yet.</p>
           )}
         </div>
-        <div className="supplemental-grid">
-          {ticketDetailFields.map(({ key, label }) => (
-            <article className={ticket[key] ? 'populated' : ''} key={key}>
-              <h3>{label}</h3>
-              <p>{ticket[key] || 'No information added yet.'}</p>
-            </article>
-          ))}
-        </div>
       </section>
+      <section className="ticket-detail-section">
+        <h2>Resources</h2>
+        <dl className="compact-properties">
+          <DetailRow
+            label="Attachment notes"
+            value={
+              ticket.attachments || 'No attachment integration is connected.'
+            }
+          />
+          <DetailRow
+            label="GitHub notes"
+            value={
+              ticket.githubDevelopment || 'No GitHub integration is connected.'
+            }
+          />
+        </dl>
+      </section>
+    </div>
+  )
+}
+
+function TextLines({ value, empty }: { value?: string; empty: string }) {
+  const lines = (value ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  return lines.length ? (
+    <ul className="text-lines">
+      {lines.map((line, index) => (
+        <li key={`${line}-${index}`}>{line}</li>
+      ))}
+    </ul>
+  ) : (
+    <p>{empty}</p>
+  )
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   )
 }

@@ -15,6 +15,7 @@ export type Capability =
   | 'ticket.update'
   | 'ticket.assign'
   | 'ticket.move'
+  | 'ticket.archive'
 
 const grants: Record<WorkspaceRole, readonly Capability[]> = {
   owner: [
@@ -31,6 +32,7 @@ const grants: Record<WorkspaceRole, readonly Capability[]> = {
     'ticket.update',
     'ticket.assign',
     'ticket.move',
+    'ticket.archive',
   ],
   admin: [
     'workspace.read',
@@ -45,6 +47,7 @@ const grants: Record<WorkspaceRole, readonly Capability[]> = {
     'ticket.update',
     'ticket.assign',
     'ticket.move',
+    'ticket.archive',
   ],
   member: [
     'workspace.read',

@@ -36,6 +36,19 @@ export const moveTicketSchema = z
     beforeTicketId: z.string().uuid().nullable().optional(),
   })
   .strict()
+export const trashTicketsSchema = z
+  .object({
+    ticketIds: z.array(z.string().uuid()).min(1).max(200).optional(),
+    all: z.literal(true).optional(),
+    expectedCount: z.number().int().nonnegative(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.all) !== Boolean(value.ticketIds), {
+    message: 'Choose ticket IDs or all tickets, not both.',
+  })
+export const restoreTicketsSchema = z
+  .object({ ticketIds: z.array(z.string().uuid()).min(1).max(200) })
+  .strict()
 export const ticketFiltersSchema = z.object({
   projectId: z.string().uuid().optional(),
   statusId: z.string().uuid().optional(),

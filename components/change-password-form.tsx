@@ -1,6 +1,5 @@
 'use client'
 import { FormEvent, useState } from 'react'
-import { authClient } from '@/lib/auth-client'
 import Link from 'next/link'
 
 export function ChangePasswordForm() {
@@ -8,18 +7,20 @@ export function ChangePasswordForm() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    const result = await authClient.changePassword({
-      currentPassword: String(form.get('currentPassword') ?? ''),
-      newPassword: String(form.get('newPassword') ?? ''),
-      revokeOtherSessions: true,
+    const response = await fetch('/api/v1/account/password-changed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        currentPassword: String(form.get('currentPassword') ?? ''),
+        newPassword: String(form.get('newPassword') ?? ''),
+      }),
     })
     setMessage(
-      result.error
+      !response.ok
         ? 'Password could not be changed.'
         : 'Password changed successfully.',
     )
-    if (!result.error) {
-      await fetch('/api/v1/account/password-changed', { method: 'POST' })
+    if (response.ok) {
       event.currentTarget.reset()
     }
   }
