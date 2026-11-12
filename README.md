@@ -45,6 +45,10 @@ Interactive sign-in may be skipped only when all of the following are true:
 - `BETTER_AUTH_URL` uses `localhost`, `127.0.0.1`, or `::1`
 - the incoming request host is also loopback
 
+`npm run dev` binds to `127.0.0.1`. In this mode, owners and admins can add an assignable person with only Username, Name, and Function. The server creates an active `member` membership with no email, password, or sign-in account; that person cannot sign in. The function is a workspace description and never changes permissions. Outside the local demo, the same form asks separately for a real internal email and temporary password and creates a normal Better Auth account. Role changes stay in the Users actions menu.
+
+Apply migration `0005_demo_people_and_to_do` with the direct migration URL before using three-field creation. It makes `users.email` nullable for credentialless demo people and renames the existing `triage` status row to `to_do` / “To Do” without changing its ID or ticket order. Existing credentialed accounts keep their email and password. Do not point migration or tests at a shared or production database without the appropriate change process.
+
 In that mode Fitara Work creates a normal database session for the existing demo owner and records mutations as that clearly identified account. It never impersonates a user shown in the Users list. Shared previews, Vercel deployments, and non-loopback hosts fail closed and require individual Better Auth sign-in.
 
 Ticket deletion is reversible: owner/admin actions set `tickets.archived_at`, preserve keys and activity, and expose restore controls. Do not use the application database for destructive test scenarios.

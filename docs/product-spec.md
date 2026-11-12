@@ -102,7 +102,7 @@ Reads active and archived work, searches, filters, and follows progress without 
 - Create, read, edit, archive, and restore tickets.
 - Types: Bug, Feature, Task, Improvement.
 - Priorities: P1, P2, P3, P4.
-- Statuses: Triage, In Progress, Review, Done.
+- Statuses: To Do, In Progress, Review, Done.
 - One assignee, one reporter, labels, optional due date.
 - Acceptance criteria.
 - Parent tickets and subtasks.
@@ -147,7 +147,7 @@ The application shell has a left sidebar:
 
 1. Product workspace / workspace switcher.
 2. My work.
-3. Triage inbox.
+3. To Do inbox.
 4. Active work.
 5. Pinned work.
 6. User profile and workspace controls.
@@ -164,17 +164,17 @@ Pinned Work is personal and ordered. A pin references a project or saved view. R
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Triage
-    Triage --> InProgress: validate and start
+    [*] --> ToDo
+    ToDo --> InProgress: validate and start
     InProgress --> Review: development complete
     Review --> InProgress: changes requested
     Review --> Done: approved
     Done --> InProgress: reopen
-    Triage --> Archived: archive
+    ToDo --> Archived: archive
     InProgress --> Archived: archive
     Review --> Archived: archive
     Done --> Archived: archive
-    Archived --> Triage: restore to previous valid status
+    Archived --> ToDo: restore to previous valid status
 ```
 
 The product does not forbid moving directly between nonadjacent statuses, but the service records the transition and authorization policy may tighten this later. Every successful status change increments the ticket version and writes an activity event in the same database transaction.
@@ -195,10 +195,10 @@ Failure variants include expired, revoked, consumed, mismatched email, OAuth can
 ### Create and triage a ticket
 
 1. A member selects New Ticket from the shell, board, list, or keyboard shortcut.
-2. The form requires title and project and defaults type to Task, priority to P3, and status to Triage.
+2. The form requires title and project and defaults type to Task, priority to P3, and status to To Do.
 3. The server allocates the next project-local sequence, creates the ticket and initial activity event transactionally, and returns the canonical DTO.
 4. The user optionally sets type, priority, labels, assignee, due date, criteria, parent, or blockers.
-5. Triage validates, prioritizes, labels, and assigns the ticket.
+5. To Do intake validates, prioritizes, labels, and assigns the ticket.
 
 ### Move a ticket
 

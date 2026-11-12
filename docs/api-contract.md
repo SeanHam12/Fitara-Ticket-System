@@ -483,6 +483,7 @@ Future mobile clients use `/api/v1` with a separately designed OAuth/token schem
 - `POST /api/auth/sign-out`: revoke the current session.
 - `POST /api/auth/change-password`: current-password protected password change.
 - `GET|POST /api/v1/memberships`: authorized list/account creation.
+- In the explicitly configured loopback development demo, owner/admin `POST /api/v1/memberships` accepts `{username, name, function}` and creates an assignable member with no sign-in credentials. Shared deployments require real email/password account provisioning. Function is descriptive and cannot grant permissions.
 - `PATCH /api/v1/memberships/:membershipId`: authorized role or active/suspended state change.
 - `POST /api/v1/projects` and `PATCH /api/v1/projects/:projectId`: capability-checked project creation, editing, archive, and restore.
 - Membership updates may issue a temporary password. Better Auth's configured password hasher is used, sessions are revoked, and the user must change it at next login.

@@ -59,7 +59,11 @@ export class WorkService {
   }
   async create(actor: ActorContext, body: unknown) {
     requireCapability(actor, 'ticket.create')
-    const input = createTicketSchema.parse(body)
+    const payload =
+      body && typeof body === 'object' && !('statusId' in body)
+        ? { ...body, statusId: await this.repo.defaultStatusId(actor) }
+        : body
+    const input = createTicketSchema.parse(payload)
     const ticket = await this.repo.createTicket(actor, input)
     if (!ticket)
       throw notFound('A selected project, status, or assignee is unavailable.')

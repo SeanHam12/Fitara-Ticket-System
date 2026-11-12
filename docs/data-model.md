@@ -217,7 +217,7 @@ Constraints:
 Fields:
 
 - `id`, `workspace_id`, `workflow_id`
-- `key`: `triage | in_progress | review | done` for MVP
+- `key`: `to_do | in_progress | review | done` for MVP. Migration `0005` renames the existing first status row in place, preserving its ID and all ticket references.
 - `name`
 - `category`: `backlog | started | completed`
 - `position`

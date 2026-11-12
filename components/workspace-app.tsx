@@ -17,6 +17,7 @@ import {
 import { useSortable } from '@dnd-kit/react/sortable'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { AddUserForm, type CreatedPerson } from './add-user-form'
 
 type Ref = {
   id: string
@@ -32,6 +33,7 @@ type Boot = {
     membershipId: string
     role: 'owner' | 'admin' | 'member' | 'viewer'
     passwordChangeRequired: boolean
+    localDemoUserCreation?: boolean
   }
   workspace: Ref
   projects: Ref[]
@@ -175,7 +177,14 @@ export function WorkspaceApp({ ticketScope }: { ticketScope?: TicketScope }) {
         router.push('/account')
         return
       }
-      setBoot(b)
+      setBoot({
+        ...b,
+        statuses: b.statuses.map((status) =>
+          status.key === 'triage' || status.name === 'Triage'
+            ? { ...status, name: 'To Do' }
+            : status,
+        ),
+      })
       setTickets(t)
       setError('')
     } catch (e) {
@@ -290,6 +299,16 @@ export function WorkspaceApp({ ticketScope }: { ticketScope?: TicketScope }) {
             </p>
           </div>
           <div className="top-actions">
+            {!ticketScope &&
+              (boot.actor.role === 'owner' || boot.actor.role === 'admin') && (
+                <button
+                  type="button"
+                  className="delete-nav-button"
+                  onClick={() => router.push('/settings/tickets')}
+                >
+                  <I>⌫</I>Delete tickets
+                </button>
+              )}
             {boot.actor.role !== 'viewer' && (
               <button className="new-button" onClick={() => setCreate(true)}>
                 <I>＋</I>New ticket
@@ -511,7 +530,7 @@ function Sidebar({
             }))
           }
         >
-          ◇<span>Triage Inbox</span>
+          ◇<span>To Do Inbox</span>
           <em>
             {tickets.filter((t) => t.statusId === boot.statuses[0]?.id).length}
           </em>
@@ -547,9 +566,6 @@ function Sidebar({
             </Link>
             <Link href="/settings/members">
               <I>♙</I>Users
-            </Link>
-            <Link href="/settings/tickets">
-              <I>⌫</I>Delete tickets
             </Link>
           </div>
         )}
@@ -1058,6 +1074,32 @@ function Create({
   fail: (x: string) => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [addingPerson, setAddingPerson] = useState(false)
+  const [members, setMembers] = useState(boot.members)
+  const [assigneeId, setAssigneeId] = useState('')
+  const [personNotice, setPersonNotice] = useState('')
+  const canCreatePeople =
+    boot.actor.role === 'owner' || boot.actor.role === 'admin'
+  async function personCreated(person: CreatedPerson) {
+    setMembers((current) => [
+      ...current.filter((member) => member.id !== person.id),
+      { id: person.id, name: person.name },
+    ])
+    setAssigneeId(person.id)
+    setAddingPerson(false)
+    try {
+      const fresh = await api<Boot>('/api/v1/bootstrap')
+      setMembers(
+        fresh.members.some((member) => member.id === person.id)
+          ? fresh.members
+          : [...fresh.members, { id: person.id, name: person.name }],
+      )
+    } catch {
+      setPersonNotice(
+        'User created and selected. Refresh the page later to update the full people list.',
+      )
+    }
+  }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setBusy(true)
@@ -1087,84 +1129,137 @@ function Create({
     }
   }
   return (
-    <form className="drawer-form" onSubmit={submit}>
-      <h2>Capture new work</h2>
-      <p>Start simple. Add more context when it matters.</p>
-      <Field label="Project">
-        <select name="project">
-          {boot.projects.map((x) => (
-            <option key={x.id} value={x.id}>
-              {x.name}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Title">
-        <input
-          name="title"
-          required
-          maxLength={200}
-          autoFocus
-          placeholder="What needs to be done?"
-        />
-      </Field>
-      <Field label="Description">
-        <textarea name="description" rows={5} />
-      </Field>
-      <div className="form-grid">
-        <Field label="Type">
-          <select name="type">
-            {['task', 'bug', 'feature', 'improvement'].map((x) => (
-              <option key={x}>{x}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Priority">
-          <select name="priority">
-            {['p1', 'p2', 'p3', 'p4'].map((x) => (
-              <option key={x}>{x}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Status">
-          <select name="status">
-            {boot.statuses.map((x) => (
+    <>
+      <form className="drawer-form" onSubmit={submit}>
+        <h2>Capture new work</h2>
+        <p>Start simple. Add more context when it matters.</p>
+        <Field label="Project">
+          <select name="project">
+            {boot.projects.map((x) => (
               <option key={x.id} value={x.id}>
                 {x.name}
               </option>
             ))}
           </select>
         </Field>
-        <Field label="Assignee">
-          <select name="assignee">
-            <option value="">Unassigned</option>
-            {boot.members.map((x) => (
-              <option key={x.id} value={x.id}>
-                {x.name}
-                {x.jobTitle ? ` — ${x.jobTitle}` : ''}
-              </option>
-            ))}
-          </select>
+        <Field label="Title">
+          <input
+            name="title"
+            required
+            maxLength={200}
+            autoFocus
+            placeholder="What needs to be done?"
+          />
         </Field>
-      </div>
-      <Field label="Due date">
-        <input name="due" type="date" />
-      </Field>
-      <fieldset>
-        <legend>Labels</legend>
-        <div className="check-row">
-          {boot.labels.map((x) => (
-            <label key={x.id}>
-              <input name="label" value={x.id} type="checkbox" />
-              {x.name}
-            </label>
-          ))}
+        <Field label="Description">
+          <textarea name="description" rows={5} />
+        </Field>
+        <div className="form-grid">
+          <Field label="Type">
+            <select name="type">
+              {['task', 'bug', 'feature', 'improvement'].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Priority">
+            <select name="priority" defaultValue="p3">
+              {['p1', 'p2', 'p3', 'p4'].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select
+              name="status"
+              defaultValue={
+                boot.statuses.find(
+                  (status) => status.key === 'to_do' || status.key === 'triage',
+                )?.id ?? boot.statuses[0]?.id
+              }
+            >
+              {boot.statuses.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="field">
+            <label htmlFor="create-assignee">Assignee</label>
+            <div className="assignee-control">
+              <select
+                id="create-assignee"
+                name="assignee"
+                value={assigneeId}
+                onChange={(event) => setAssigneeId(event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {members.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                    {x.jobTitle ? ` — ${x.jobTitle}` : ''}
+                  </option>
+                ))}
+              </select>
+              {canCreatePeople && (
+                <button
+                  type="button"
+                  className="add-assignee-button"
+                  aria-label="Add user beside Assignee"
+                  title="Add user"
+                  onClick={() => setAddingPerson(true)}
+                >
+                  +
+                </button>
+              )}
+            </div>
+          </div>
         </div>
-      </fieldset>
-      <button className="save-button" disabled={busy}>
-        {busy ? 'Creating…' : 'Create ticket'}
-      </button>
-    </form>
+        <Field label="Due date">
+          <input name="due" type="date" />
+        </Field>
+        <fieldset>
+          <legend>Labels</legend>
+          <div className="check-row">
+            {boot.labels.map((x) => (
+              <label key={x.id}>
+                <input name="label" value={x.id} type="checkbox" />
+                {x.name}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <button className="save-button" disabled={busy}>
+          {busy ? 'Creating…' : 'Create ticket'}
+        </button>
+      </form>
+      {personNotice && (
+        <p className="person-notice" role="status">
+          {personNotice}
+        </p>
+      )}
+      {addingPerson && (
+        <section
+          className="add-person-panel"
+          role="dialog"
+          aria-label="Add user for assignee"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation()
+              setAddingPerson(false)
+            }
+          }}
+        >
+          <h3>Add user</h3>
+          <AddUserForm
+            localDemo={boot.actor.localDemoUserCreation === true}
+            onCreated={personCreated}
+            onCancel={() => setAddingPerson(false)}
+          />
+        </section>
+      )}
+    </>
   )
 }
 function Detail({

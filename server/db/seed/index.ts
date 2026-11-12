@@ -357,11 +357,11 @@ async function main() {
   await db
     .insert(statuses)
     .values(
-      ['Triage', 'In Progress', 'Review', 'Done'].map((name, i) => ({
+      ['To Do', 'In Progress', 'Review', 'Done'].map((name, i) => ({
         id: ids.statuses[i],
         workspaceId: ids.workspace,
         name,
-        key: ['triage', 'in_progress', 'review', 'done'][i],
+        key: ['to_do', 'in_progress', 'review', 'done'][i],
         position: i,
       })),
     )

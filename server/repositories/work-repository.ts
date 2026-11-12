@@ -118,6 +118,20 @@ type ArchiveInput = {
 
 export class WorkRepository {
   private db = getDb()
+  async defaultStatusId(actor: ActorContext) {
+    const [status] = await this.db
+      .select({ id: statuses.id })
+      .from(statuses)
+      .where(
+        and(
+          eq(statuses.workspaceId, actor.workspaceId),
+          inArray(statuses.key, ['to_do', 'triage']),
+        ),
+      )
+      .orderBy(asc(statuses.position))
+      .limit(1)
+    return status?.id
+  }
   async bootstrap(actor: ActorContext) {
     const [[workspace], projectRows, statusRows, labelRows, people] =
       await Promise.all([
@@ -293,7 +307,6 @@ export class WorkRepository {
       .from(tickets)
       .where(and(...conditions))
       .orderBy(order, asc(tickets.id))
-      .limit(200)
     return this.enrich(actor, rows)
   }
   async getTicket(actor: ActorContext, id: string) {

@@ -77,7 +77,7 @@ export const users = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: varchar('name', { length: 100 }).notNull(),
-    email: varchar('email', { length: 320 }).notNull().unique(),
+    email: varchar('email', { length: 320 }).unique(),
     emailVerified: boolean('email_verified').notNull().default(false),
     image: text('avatar_url'),
     username: varchar('username', { length: 32 }),
@@ -273,6 +273,7 @@ export const tickets = pgTable(
     dependencies: text('dependencies').notNull().default(''),
     attachments: text('attachments').notNull().default(''),
     githubDevelopment: text('github_development').notNull().default(''),
+    githubUrl: text('github_url'),
     dueDate: date('due_date'),
     version: integer('version').notNull().default(1),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
