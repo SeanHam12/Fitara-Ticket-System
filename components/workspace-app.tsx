@@ -17,7 +17,7 @@ import {
 import { useSortable } from '@dnd-kit/react/sortable'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AddUserForm, type CreatedPerson } from './add-user-form'
+import { validGitHubUrl } from '@/lib/github-url'
 
 type Ref = {
   id: string
@@ -59,7 +59,7 @@ export type Ticket = {
   statusId: string
   projectId: string
   reporterMembershipId: string
-  assigneeMembershipId: string | null
+  assigneeMembershipIds: string[]
   position: number
   blocked: boolean
   acceptanceCriteria: string
@@ -68,6 +68,7 @@ export type Ticket = {
   dependencies: string
   attachments: string
   githubDevelopment: string
+  githubUrl: string | null
   dueDate: string | null
   version: number
   labels: Ref[]
@@ -110,7 +111,7 @@ const ticketDetailFields = [
 function matchesScope(t: Ticket, scope: TicketScope, boot: Boot) {
   if (scope === 'open') return t.statusId !== boot.statuses[3]?.id
   if (scope === 'assigned')
-    return t.assigneeMembershipId === boot.actor.membershipId
+    return t.assigneeMembershipIds.includes(boot.actor.membershipId)
   if (scope === 'review') return t.statusId === boot.statuses[2]?.id
   return t.blocked
 }
@@ -217,7 +218,7 @@ export function WorkspaceApp({ ticketScope }: { ticketScope?: TicketScope }) {
               .includes(f.q.toLowerCase())) &&
           (!f.project || t.projectId === f.project) &&
           (!f.status || t.statusId === f.status) &&
-          (!f.assignee || t.assigneeMembershipId === f.assignee) &&
+          (!f.assignee || t.assigneeMembershipIds.includes(f.assignee)) &&
           (!f.reporter || t.reporterMembershipId === f.reporter) &&
           (!f.blocked || String(t.blocked) === f.blocked),
       ),
@@ -751,7 +752,7 @@ function Card({
   index: number
 }) {
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
-  const assignee = memberFor(boot, t.assigneeMembershipId)
+  const assignee = memberFor(boot, t.assigneeMembershipIds[0] ?? null)
   const { ref, handleRef, isDragging } = useSortable({
     id: t.id,
     index,
@@ -804,8 +805,16 @@ function Card({
           <span className="type">
             {t.type === 'bug' ? '◆' : t.type === 'feature' ? '✦' : '□'} {t.type}
           </span>
-          <span className="avatar mini">
+          <span
+            className="avatar mini"
+            title={t.assigneeMembershipIds
+              .map((id) => memberFor(boot, id)?.name ?? 'Unknown')
+              .join(', ')}
+          >
             {assignee ? initials(assignee.name) : '—'}
+            {t.assigneeMembershipIds.length > 1
+              ? ` +${t.assigneeMembershipIds.length - 1}`
+              : ''}
           </span>
         </footer>
       </button>
@@ -988,12 +997,15 @@ function List({
                 </span>
               </td>
               <td>
-                {memberFor(boot, t.assigneeMembershipId)?.name ?? 'Unassigned'}
-                {memberFor(boot, t.assigneeMembershipId)?.jobTitle && (
-                  <small className="member-role">
-                    {memberFor(boot, t.assigneeMembershipId)?.jobTitle}
-                  </small>
-                )}
+                {t.assigneeMembershipIds
+                  .map((id) => memberFor(boot, id)?.name ?? 'Unknown')
+                  .join(', ') || 'Unassigned'}
+                {t.assigneeMembershipIds.length === 1 &&
+                  memberFor(boot, t.assigneeMembershipIds[0])?.jobTitle && (
+                    <small className="member-role">
+                      {memberFor(boot, t.assigneeMembershipIds[0])?.jobTitle}
+                    </small>
+                  )}
               </td>
               <td>
                 <div className="labels">
@@ -1064,6 +1076,97 @@ const Field = ({
     {children}
   </label>
 )
+function AssigneePicker({
+  members,
+  value,
+  onChange,
+}: {
+  members: Ref[]
+  value: string[]
+  onChange: (ids: string[]) => void
+}) {
+  const [choosing, setChoosing] = useState(false)
+  const rows = value.length ? value : ['']
+  return (
+    <div className="field assignee-picker">
+      <span>Assignee</span>
+      {rows.map((id, index) => (
+        <div className="assignee-control" key={`${index}-${id}`}>
+          <select
+            aria-label={`Assignee ${index + 1}`}
+            value={id}
+            onChange={(event) => {
+              const next = event.target.value
+              onChange(
+                next
+                  ? id
+                    ? value.map((old, i) => (i === index ? next : old))
+                    : [...value, next]
+                  : value.filter((_, i) => i !== index),
+              )
+            }}
+          >
+            <option value="">Unassigned</option>
+            {members
+              .filter(
+                (member) => member.id === id || !value.includes(member.id),
+              )
+              .map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.name}
+                  {member.jobTitle ? ` — ${member.jobTitle}` : ''}
+                </option>
+              ))}
+            {id && !members.some((member) => member.id === id) && (
+              <option value={id}>Previously assigned (inactive)</option>
+            )}
+          </select>
+          {index === 0 && (
+            <button
+              className="add-assignee-button"
+              type="button"
+              aria-label="Add another assignee"
+              disabled={members.every((member) => value.includes(member.id))}
+              onClick={() => setChoosing((open) => !open)}
+            >
+              +
+            </button>
+          )}
+          {id && (
+            <button
+              className="add-assignee-button"
+              type="button"
+              aria-label={`Remove ${members.find((member) => member.id === id)?.name ?? 'assignee'}`}
+              onClick={() => onChange(value.filter((_, i) => i !== index))}
+            >
+              −
+            </button>
+          )}
+        </div>
+      ))}
+      {choosing && (
+        <select
+          aria-label="Choose existing assignee"
+          value=""
+          onChange={(event) => {
+            if (event.target.value) onChange([...value, event.target.value])
+            setChoosing(false)
+          }}
+        >
+          <option value="">Choose a person…</option>
+          {members
+            .filter((member) => !value.includes(member.id))
+            .map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name}
+                {member.jobTitle ? ` — ${member.jobTitle}` : ''}
+              </option>
+            ))}
+        </select>
+      )}
+    </div>
+  )
+}
 function Create({
   boot,
   done,
@@ -1074,36 +1177,16 @@ function Create({
   fail: (x: string) => void
 }) {
   const [busy, setBusy] = useState(false)
-  const [addingPerson, setAddingPerson] = useState(false)
-  const [members, setMembers] = useState(boot.members)
-  const [assigneeId, setAssigneeId] = useState('')
-  const [personNotice, setPersonNotice] = useState('')
-  const canCreatePeople =
-    boot.actor.role === 'owner' || boot.actor.role === 'admin'
-  async function personCreated(person: CreatedPerson) {
-    setMembers((current) => [
-      ...current.filter((member) => member.id !== person.id),
-      { id: person.id, name: person.name },
-    ])
-    setAssigneeId(person.id)
-    setAddingPerson(false)
-    try {
-      const fresh = await api<Boot>('/api/v1/bootstrap')
-      setMembers(
-        fresh.members.some((member) => member.id === person.id)
-          ? fresh.members
-          : [...fresh.members, { id: person.id, name: person.name }],
-      )
-    } catch {
-      setPersonNotice(
-        'User created and selected. Refresh the page later to update the full people list.',
-      )
-    }
-  }
+  const [assignees, setAssignees] = useState<string[]>([])
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setBusy(true)
     const f = new FormData(e.currentTarget)
+    if (f.get('githubUrl') && !validGitHubUrl(String(f.get('githubUrl')))) {
+      fail('Enter a valid GitHub repository, issue, or pull request URL.')
+      setBusy(false)
+      return
+    }
     try {
       done(
         await api('/api/v1/tickets', {
@@ -1116,7 +1199,8 @@ function Create({
             type: f.get('type'),
             priority: f.get('priority'),
             statusId: f.get('status'),
-            assigneeMembershipId: f.get('assignee') || null,
+            assigneeMembershipIds: assignees,
+            githubUrl: f.get('githubUrl') || null,
             labelIds: f.getAll('label'),
             dueDate: f.get('due') || null,
           }),
@@ -1185,37 +1269,19 @@ function Create({
               ))}
             </select>
           </Field>
-          <div className="field">
-            <label htmlFor="create-assignee">Assignee</label>
-            <div className="assignee-control">
-              <select
-                id="create-assignee"
-                name="assignee"
-                value={assigneeId}
-                onChange={(event) => setAssigneeId(event.target.value)}
-              >
-                <option value="">Unassigned</option>
-                {members.map((x) => (
-                  <option key={x.id} value={x.id}>
-                    {x.name}
-                    {x.jobTitle ? ` — ${x.jobTitle}` : ''}
-                  </option>
-                ))}
-              </select>
-              {canCreatePeople && (
-                <button
-                  type="button"
-                  className="add-assignee-button"
-                  aria-label="Add user beside Assignee"
-                  title="Add user"
-                  onClick={() => setAddingPerson(true)}
-                >
-                  +
-                </button>
-              )}
-            </div>
-          </div>
+          <AssigneePicker
+            members={boot.members}
+            value={assignees}
+            onChange={setAssignees}
+          />
         </div>
+        <Field label="GitHub link">
+          <input
+            name="githubUrl"
+            type="url"
+            placeholder="https://github.com/owner/repository"
+          />
+        </Field>
         <Field label="Due date">
           <input name="due" type="date" />
         </Field>
@@ -1234,31 +1300,6 @@ function Create({
           {busy ? 'Creating…' : 'Create ticket'}
         </button>
       </form>
-      {personNotice && (
-        <p className="person-notice" role="status">
-          {personNotice}
-        </p>
-      )}
-      {addingPerson && (
-        <section
-          className="add-person-panel"
-          role="dialog"
-          aria-label="Add user for assignee"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.stopPropagation()
-              setAddingPerson(false)
-            }
-          }}
-        >
-          <h3>Add user</h3>
-          <AddUserForm
-            localDemo={boot.actor.localDemoUserCreation === true}
-            onCreated={personCreated}
-            onCancel={() => setAddingPerson(false)}
-          />
-        </section>
-      )}
     </>
   )
 }
@@ -1272,9 +1313,20 @@ function Detail({
   mutate: (id: string, b: object) => void
 }) {
   const [edit, setEdit] = useState(false)
+  const [editAssignees, setEditAssignees] = useState(
+    ticket.assigneeMembershipIds,
+  )
+  const [fieldError, setFieldError] = useState('')
   function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
+    if (f.get('githubUrl') && !validGitHubUrl(String(f.get('githubUrl')))) {
+      setFieldError(
+        'Enter a valid GitHub repository, issue, or pull request URL.',
+      )
+      return
+    }
+    setFieldError('')
     void mutate(ticket.id, {
       expectedVersion: ticket.version,
       title: f.get('title'),
@@ -1282,7 +1334,11 @@ function Detail({
       type: f.get('type'),
       priority: f.get('priority'),
       statusId: f.get('status'),
-      assigneeMembershipId: f.get('assignee') || null,
+      ...(JSON.stringify(editAssignees) ===
+      JSON.stringify(ticket.assigneeMembershipIds)
+        ? {}
+        : { assigneeMembershipIds: editAssignees }),
+      githubUrl: f.get('githubUrl') || null,
       dueDate: f.get('due') || null,
       blocked: f.get('blocked') === 'on',
       ...Object.fromEntries(
@@ -1294,6 +1350,11 @@ function Detail({
   if (edit)
     return (
       <form className="drawer-form" onSubmit={submit}>
+        {fieldError && (
+          <p role="alert" className="form-error">
+            {fieldError}
+          </p>
+        )}
         <Field label="Title">
           <input name="title" defaultValue={ticket.title} />
         </Field>
@@ -1328,21 +1389,20 @@ function Detail({
               ))}
             </select>
           </Field>
-          <Field label="Assignee">
-            <select
-              name="assignee"
-              defaultValue={ticket.assigneeMembershipId || ''}
-            >
-              <option value="">Unassigned</option>
-              {boot.members.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                  {x.jobTitle ? ` — ${x.jobTitle}` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <AssigneePicker
+            members={boot.members}
+            value={editAssignees}
+            onChange={setEditAssignees}
+          />
         </div>
+        <Field label="GitHub link">
+          <input
+            name="githubUrl"
+            type="url"
+            defaultValue={ticket.githubUrl ?? ''}
+            placeholder="https://github.com/owner/repository"
+          />
+        </Field>
         <Field label="Due date">
           <input name="due" type="date" defaultValue={ticket.dueDate || ''} />
         </Field>
@@ -1373,7 +1433,14 @@ function Detail({
           {ticket.identifier} · {ticket.type}
         </span>
         {boot.actor.role !== 'viewer' && (
-          <button onClick={() => setEdit(true)}>Edit ticket</button>
+          <button
+            onClick={() => {
+              setEditAssignees(ticket.assigneeMembershipIds)
+              setEdit(true)
+            }}
+          >
+            Edit ticket
+          </button>
         )}
       </div>
       <h1>{ticket.title}</h1>
@@ -1398,36 +1465,6 @@ function Detail({
         </p>
       </section>
       <section className="ticket-detail-section">
-        <h2>Done when</h2>
-        <p className="placeholder-note">
-          Text criteria only · completion tracking is not implemented
-        </p>
-        <TextLines
-          value={ticket.acceptanceCriteria}
-          empty="No acceptance criteria added."
-        />
-      </section>
-      <section className="ticket-detail-section">
-        <h2>Work &amp; blockers</h2>
-        <dl className="compact-properties">
-          <DetailRow
-            label="Subtask notes"
-            value={
-              ticket.subtasks ||
-              'No linked subtasks; this is currently plain text.'
-            }
-          />
-          <DetailRow
-            label="Dependency notes"
-            value={
-              ticket.dependencies ||
-              'No linked dependencies; this is currently plain text.'
-            }
-          />
-          <DetailRow label="Blocked" value={ticket.blocked ? 'Yes' : 'No'} />
-        </dl>
-      </section>
-      <section className="ticket-detail-section">
         <h2>Details</h2>
         <dl className="compact-properties">
           <DetailRow
@@ -1438,9 +1475,11 @@ function Detail({
             }
           />
           <DetailRow
-            label="Assignee"
+            label="Assignees"
             value={
-              memberFor(boot, ticket.assigneeMembershipId)?.name ?? 'Unassigned'
+              ticket.assigneeMembershipIds
+                .map((id) => memberFor(boot, id)?.name ?? 'Unknown')
+                .join(', ') || 'Unassigned'
             }
           />
           <DetailRow
@@ -1478,40 +1517,31 @@ function Detail({
           )}
         </div>
       </section>
-      <section className="ticket-detail-section">
-        <h2>Resources</h2>
-        <dl className="compact-properties">
-          <DetailRow
-            label="Attachment notes"
-            value={
-              ticket.attachments || 'No attachment integration is connected.'
-            }
-          />
-          <DetailRow
-            label="GitHub notes"
-            value={
-              ticket.githubDevelopment || 'No GitHub integration is connected.'
-            }
-          />
-        </dl>
-      </section>
+      {(ticket.attachments || ticket.githubUrl) && (
+        <section className="ticket-detail-section">
+          <h2>Resources</h2>
+          <dl className="compact-properties">
+            {ticket.attachments && (
+              <DetailRow label="Attachment notes" value={ticket.attachments} />
+            )}
+            {ticket.githubUrl && (
+              <div>
+                <dt>GitHub link</dt>
+                <dd>
+                  <a
+                    href={ticket.githubUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {ticket.githubUrl}
+                  </a>
+                </dd>
+              </div>
+            )}
+          </dl>
+        </section>
+      )}
     </div>
-  )
-}
-
-function TextLines({ value, empty }: { value?: string; empty: string }) {
-  const lines = (value ?? '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-  return lines.length ? (
-    <ul className="text-lines">
-      {lines.map((line, index) => (
-        <li key={`${line}-${index}`}>{line}</li>
-      ))}
-    </ul>
-  ) : (
-    <p>{empty}</p>
   )
 }
 

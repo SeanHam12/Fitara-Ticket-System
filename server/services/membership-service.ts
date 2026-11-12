@@ -1,5 +1,5 @@
 import 'server-only'
-import { and, asc, eq, ilike, sql } from 'drizzle-orm'
+import { and, asc, eq, ilike, inArray, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { isAPIError } from 'better-auth/api'
 import type { ActorContext } from '@/server/auth/actor'
@@ -11,11 +11,18 @@ import {
   activityEvents,
   memberships,
   sessions,
+  ticketAssignees,
+  tickets,
   users,
   workspaceTaxonomyItems,
 } from '@/server/db/schema'
 import { AppError, conflict, forbidden, notFound } from '@/server/errors'
 import { demoPersonSchema, usernameSchema } from './person-schema'
+import {
+  activeAssignmentScope,
+  assertCanDeleteMembership,
+  planActiveTicketUnassignment,
+} from './membership-deletion'
 
 const optionalTaxonomyId = z.preprocess(
   (value) => (value === '' ? null : value),
@@ -50,6 +57,10 @@ const updateSchema = z
   .strict()
   .refine((value) => Object.values(value).some((item) => item !== undefined))
 
+const deleteSchema = z
+  .object({ expectedActiveTicketCount: z.number().int().nonnegative() })
+  .strict()
+
 export class MembershipService {
   private db = getDb()
   async list(actor: ActorContext) {
@@ -76,6 +87,186 @@ export class MembershipService {
       .where(eq(memberships.workspaceId, actor.workspaceId))
       .groupBy(memberships.id, users.id)
       .orderBy(asc(users.name))
+  }
+  async deletionImpact(actor: ActorContext, membershipId: string) {
+    requireCapability(actor, 'membership.manage')
+    const [target] = await this.db
+      .select({
+        id: memberships.id,
+        role: memberships.role,
+        state: memberships.state,
+        name: users.name,
+        username: users.username,
+      })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(
+        and(
+          eq(memberships.workspaceId, actor.workspaceId),
+          eq(memberships.id, membershipId),
+        ),
+      )
+      .limit(1)
+    if (!target) throw notFound('Membership not found.')
+    const owners = target.role === 'owner' ? await this.activeOwners(actor) : []
+    assertCanDeleteMembership(actor, target, owners.length)
+    const assigned = await this.activeAssignments(actor, membershipId)
+    return {
+      name: target.name,
+      username: target.username,
+      activeTicketCount: assigned.length,
+    }
+  }
+
+  async delete(actor: ActorContext, membershipId: string, body: unknown) {
+    requireCapability(actor, 'membership.manage')
+    const input = deleteSchema.parse(body)
+    return this.db.transaction(async (tx) => {
+      const [target] = await tx
+        .select({
+          id: memberships.id,
+          userId: memberships.userId,
+          role: memberships.role,
+          state: memberships.state,
+        })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.workspaceId, actor.workspaceId),
+            eq(memberships.id, membershipId),
+          ),
+        )
+        .limit(1)
+        .for('update')
+      if (!target) throw notFound('Membership not found.')
+      const owners =
+        target.role === 'owner'
+          ? await tx
+              .select({ id: memberships.id })
+              .from(memberships)
+              .where(
+                and(
+                  eq(memberships.workspaceId, actor.workspaceId),
+                  eq(memberships.role, 'owner'),
+                  eq(memberships.state, 'active'),
+                ),
+              )
+              .for('update')
+          : []
+      assertCanDeleteMembership(actor, target, owners.length)
+      const assigned = await tx
+        .select({ id: tickets.id, projectId: tickets.projectId })
+        .from(ticketAssignees)
+        .innerJoin(
+          tickets,
+          and(
+            eq(tickets.id, ticketAssignees.ticketId),
+            eq(tickets.workspaceId, actor.workspaceId),
+          ),
+        )
+        .where(activeAssignmentScope(actor.workspaceId, membershipId))
+        .for('update', { of: tickets })
+      const ticketIds = planActiveTicketUnassignment(
+        assigned,
+        input.expectedActiveTicketCount,
+      )
+      if (ticketIds.length) {
+        await tx
+          .update(tickets)
+          .set({ version: sql`${tickets.version}+1`, updatedAt: new Date() })
+          .where(
+            and(
+              eq(tickets.workspaceId, actor.workspaceId),
+              inArray(tickets.id, ticketIds),
+              isNull(tickets.archivedAt),
+            ),
+          )
+        const detached = await tx
+          .delete(ticketAssignees)
+          .where(
+            and(
+              eq(ticketAssignees.workspaceId, actor.workspaceId),
+              eq(ticketAssignees.membershipId, membershipId),
+              inArray(ticketAssignees.ticketId, ticketIds),
+            ),
+          )
+          .returning({ ticketId: ticketAssignees.ticketId })
+        if (detached.length !== ticketIds.length)
+          throw conflict(
+            'Assigned tickets changed. Review the count and try again.',
+          )
+        await tx.insert(activityEvents).values(
+          assigned.map((ticket) => ({
+            workspaceId: actor.workspaceId,
+            projectId: ticket.projectId,
+            ticketId: ticket.id,
+            actorMembershipId: actor.membershipId,
+            action: 'ticket.assignees_changed',
+            metadata: {
+              removedMembershipId: membershipId,
+              reason: 'membership.removed',
+            },
+            correlationId: actor.requestId,
+          })),
+        )
+      }
+      await tx
+        .update(memberships)
+        .set({ state: 'removed', updatedAt: new Date() })
+        .where(
+          and(
+            eq(memberships.workspaceId, actor.workspaceId),
+            eq(memberships.id, membershipId),
+          ),
+        )
+      const [otherActive] = await tx
+        .select({ id: memberships.id })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.userId, target.userId),
+            eq(memberships.state, 'active'),
+          ),
+        )
+        .limit(1)
+      if (!otherActive)
+        await tx.delete(sessions).where(eq(sessions.userId, target.userId))
+      await tx.insert(activityEvents).values({
+        workspaceId: actor.workspaceId,
+        actorMembershipId: actor.membershipId,
+        action: 'membership.removed',
+        metadata: { membershipId, activeTicketsUnassigned: assigned.length },
+        correlationId: actor.requestId,
+      })
+      return { removed: true, activeTicketsUnassigned: assigned.length }
+    })
+  }
+
+  private activeOwners(actor: ActorContext) {
+    return this.db
+      .select({ id: memberships.id })
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.workspaceId, actor.workspaceId),
+          eq(memberships.role, 'owner'),
+          eq(memberships.state, 'active'),
+        ),
+      )
+  }
+
+  private activeAssignments(actor: ActorContext, membershipId: string) {
+    return this.db
+      .select({ id: tickets.id })
+      .from(ticketAssignees)
+      .innerJoin(
+        tickets,
+        and(
+          eq(tickets.id, ticketAssignees.ticketId),
+          eq(tickets.workspaceId, actor.workspaceId),
+        ),
+      )
+      .where(activeAssignmentScope(actor.workspaceId, membershipId))
   }
   async create(actor: ActorContext, body: unknown, localDemo = false) {
     requireCapability(actor, 'membership.create')

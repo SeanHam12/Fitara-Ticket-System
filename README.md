@@ -53,6 +53,10 @@ In that mode Fitara Work creates a normal database session for the existing demo
 
 Ticket deletion is reversible: owner/admin actions set `tickets.archived_at`, preserve keys and activity, and expose restore controls. Do not use the application database for destructive test scenarios.
 
+User deletion is workspace-scoped soft deletion: it changes a membership to `removed`, hides it from the normal Users list and assignee choices, and detaches it from active tickets while preserving other assignees. The confirmation shows the current active-ticket count; a changed count rejects the request. Archived ticket attribution, activity events, and the underlying authentication account remain. Deleted users can be restored from the Users page; restoring access does not reassign active tickets. The last active owner and the acting user cannot be deleted, and admins cannot delete owners or admins.
+
+Migration `0006_multi_assignees_github_url` adds ordered `ticket_assignees` and a validated `tickets.github_url`. It copies existing single assignments without changing ticket rows or audit events. The legacy `assignee_membership_id` column is retained for rollback compatibility; new code uses only `ticket_assignees`. Apply the migration to an isolated test database before deploying code that reads the new table. A ticket can have any number of distinct active workspace assignees, and GitHub links are optional HTTPS repository, issue, or pull-request URLs.
+
 ## Security and behavior
 
 - Better Auth owns credential hashing, generic sign-in failure behavior, HTTP-only cookies, CSRF/origin checks, database sessions, and login rate limiting.

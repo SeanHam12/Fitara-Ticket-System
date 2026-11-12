@@ -35,3 +35,31 @@ it('uses the existing To Do row when a ticket request omits status', async () =>
   )
   expect(result.statusId).toBe(id(7))
 })
+
+it('denies a member assigning another person while allowing self removal', async () => {
+  const updateTicket = vi.fn().mockResolvedValue({ kind: 'ok' })
+  const repo = {
+    getTicket: vi
+      .fn()
+      .mockResolvedValue({ id: id(6), assigneeMembershipIds: [id(2)] }),
+    updateTicket,
+    activity: vi.fn().mockResolvedValue([]),
+  } as unknown as WorkRepository
+  const member = { ...actor, role: 'member' as const }
+  await expect(
+    new WorkService(repo).update(member, id(6), {
+      expectedVersion: 1,
+      assigneeMembershipIds: [id(9)],
+    }),
+  ).rejects.toMatchObject({ status: 403 })
+  expect(updateTicket).not.toHaveBeenCalled()
+  await new WorkService(repo).update(member, id(6), {
+    expectedVersion: 1,
+    assigneeMembershipIds: [],
+  })
+  expect(updateTicket).toHaveBeenCalledWith(
+    member,
+    id(6),
+    expect.objectContaining({ assigneeMembershipIds: [] }),
+  )
+})

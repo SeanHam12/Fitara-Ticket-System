@@ -18,6 +18,7 @@ import {
   memberships,
   projects,
   statuses,
+  ticketAssignees,
   ticketLabels,
   ticketSequences,
   tickets,
@@ -53,7 +54,6 @@ const summarySelect = {
   statusId: tickets.statusId,
   projectId: tickets.projectId,
   reporterMembershipId: tickets.reporterMembershipId,
-  assigneeMembershipId: tickets.assigneeMembershipId,
   position: tickets.position,
   blocked: tickets.blocked,
   acceptanceCriteria: tickets.acceptanceCriteria,
@@ -62,6 +62,7 @@ const summarySelect = {
   dependencies: tickets.dependencies,
   attachments: tickets.attachments,
   githubDevelopment: tickets.githubDevelopment,
+  githubUrl: tickets.githubUrl,
   dueDate: tickets.dueDate,
   version: tickets.version,
   updatedAt: tickets.updatedAt,
@@ -76,7 +77,6 @@ type Summary = {
   statusId: string
   projectId: string
   reporterMembershipId: string
-  assigneeMembershipId: string | null
   position: number
   blocked: boolean
   acceptanceCriteria: string
@@ -85,6 +85,7 @@ type Summary = {
   dependencies: string
   attachments: string
   githubDevelopment: string
+  githubUrl: string | null
   dueDate: string | null
   version: number
   updatedAt: Date
@@ -98,7 +99,7 @@ type UpdateInput = z.infer<typeof updateTicketSchema> & {
   type?: 'bug' | 'feature' | 'task' | 'improvement'
   priority?: 'p1' | 'p2' | 'p3' | 'p4'
   statusId?: string
-  assigneeMembershipId?: string | null
+  assigneeMembershipIds?: string[]
   labelIds?: string[]
   dueDate?: string | null
   blocked?: boolean
@@ -108,6 +109,7 @@ type UpdateInput = z.infer<typeof updateTicketSchema> & {
   dependencies?: string
   attachments?: string
   githubDevelopment?: string
+  githubUrl?: string | null
   position?: number
 }
 type ArchiveInput = {
@@ -285,9 +287,13 @@ export class WorkRepository {
     if (f.statusId) conditions.push(eq(tickets.statusId, f.statusId))
     if (f.priority) conditions.push(eq(tickets.priority, f.priority))
     if (f.assignee)
-      conditions.push(eq(tickets.assigneeMembershipId, f.assignee))
+      conditions.push(
+        sql`exists (select 1 from ticket_assignees ta where ta.ticket_id = ${tickets.id} and ta.workspace_id = ${actor.workspaceId} and ta.membership_id = ${f.assignee})`,
+      )
     if (f.onlyMine)
-      conditions.push(eq(tickets.assigneeMembershipId, actor.membershipId))
+      conditions.push(
+        sql`exists (select 1 from ticket_assignees ta where ta.ticket_id = ${tickets.id} and ta.workspace_id = ${actor.workspaceId} and ta.membership_id = ${actor.membershipId})`,
+      )
     if (f.search)
       conditions.push(
         or(
@@ -343,8 +349,24 @@ export class WorkRepository {
           inArray(ticketLabels.ticketId, ids),
         ),
       )
+    const assignments = await this.db
+      .select({
+        ticketId: ticketAssignees.ticketId,
+        membershipId: ticketAssignees.membershipId,
+      })
+      .from(ticketAssignees)
+      .where(
+        and(
+          eq(ticketAssignees.workspaceId, actor.workspaceId),
+          inArray(ticketAssignees.ticketId, ids),
+        ),
+      )
+      .orderBy(asc(ticketAssignees.position))
     return rows.map((r) => ({
       ...r,
+      assigneeMembershipIds: assignments
+        .filter((a) => a.ticketId === r.id)
+        .map((a) => a.membershipId),
       labels: links
         .filter((x) => x.ticketId === r.id)
         .map((link) => ({ id: link.id, name: link.name, color: link.color })),
@@ -375,18 +397,19 @@ export class WorkRepository {
         )
         .limit(1)
       if (!status) return null
-      if (input.assigneeMembershipId) {
-        const [m] = await tx
-          .select()
+      if (input.assigneeMembershipIds.length) {
+        const found = await tx
+          .select({ id: memberships.id })
           .from(memberships)
           .where(
             and(
               eq(memberships.workspaceId, actor.workspaceId),
-              eq(memberships.id, input.assigneeMembershipId),
+              inArray(memberships.id, input.assigneeMembershipIds),
               eq(memberships.state, 'active'),
             ),
           )
-        if (!m) return null
+          .for('update')
+        if (found.length !== input.assigneeMembershipIds.length) return null
       }
       if (input.labelIds.length) {
         const valid = await tx
@@ -415,7 +438,7 @@ export class WorkRepository {
           },
         })
         .returning({ currentValue: ticketSequences.currentValue })
-      const { labelIds, ...ticketInput } = input
+      const { labelIds, assigneeMembershipIds, ...ticketInput } = input
       const [ticket] = await tx
         .insert(tickets)
         .values({
@@ -427,6 +450,15 @@ export class WorkRepository {
           position: currentValue * 1000,
         })
         .returning()
+      if (assigneeMembershipIds.length)
+        await tx.insert(ticketAssignees).values(
+          assigneeMembershipIds.map((membershipId, position) => ({
+            workspaceId: actor.workspaceId,
+            ticketId: ticket.id,
+            membershipId,
+            position,
+          })),
+        )
       if (labelIds.length)
         await tx.insert(ticketLabels).values(
           labelIds.map((labelId: string) => ({
@@ -449,7 +481,8 @@ export class WorkRepository {
   }
   async updateTicket(actor: ActorContext, id: string, input: UpdateInput) {
     return this.db.transaction(async (tx) => {
-      const { expectedVersion, labelIds, ...changes } = input
+      const { expectedVersion, labelIds, assigneeMembershipIds, ...changes } =
+        input
       const [old] = await tx
         .select()
         .from(tickets)
@@ -470,18 +503,20 @@ export class WorkRepository {
           )
         if (!s) return { kind: 'missing' } as const
       }
-      if (changes.assigneeMembershipId) {
-        const [m] = await tx
-          .select()
+      if (assigneeMembershipIds?.length) {
+        const found = await tx
+          .select({ id: memberships.id })
           .from(memberships)
           .where(
             and(
               eq(memberships.workspaceId, actor.workspaceId),
-              eq(memberships.id, changes.assigneeMembershipId),
+              inArray(memberships.id, assigneeMembershipIds),
               eq(memberships.state, 'active'),
             ),
           )
-        if (!m) return { kind: 'missing' } as const
+          .for('update')
+        if (found.length !== assigneeMembershipIds.length)
+          return { kind: 'missing' } as const
       }
       if (labelIds?.length) {
         const valid = await tx
@@ -512,6 +547,25 @@ export class WorkRepository {
         )
         .returning()
       if (!updated) return { kind: 'conflict' } as const
+      if (assigneeMembershipIds) {
+        await tx
+          .delete(ticketAssignees)
+          .where(
+            and(
+              eq(ticketAssignees.workspaceId, actor.workspaceId),
+              eq(ticketAssignees.ticketId, id),
+            ),
+          )
+        if (assigneeMembershipIds.length)
+          await tx.insert(ticketAssignees).values(
+            assigneeMembershipIds.map((membershipId, position) => ({
+              workspaceId: actor.workspaceId,
+              ticketId: id,
+              membershipId,
+              position,
+            })),
+          )
+      }
       if (labelIds) {
         await tx
           .delete(ticketLabels)
@@ -535,11 +589,18 @@ export class WorkRepository {
         projectId: old.projectId,
         ticketId: id,
         actorMembershipId: actor.membershipId,
-        action:
-          changes.statusId && Object.keys(changes).length <= 2
+        action: assigneeMembershipIds
+          ? 'ticket.assignees_changed'
+          : changes.statusId && Object.keys(changes).length <= 2
             ? 'ticket.moved'
             : 'ticket.updated',
-        metadata: { fields: Object.keys(changes) },
+        metadata: {
+          fields: [
+            ...Object.keys(changes),
+            ...(assigneeMembershipIds ? ['assigneeMembershipIds'] : []),
+          ],
+          assigneeMembershipIds,
+        },
         correlationId: actor.requestId,
       })
       return { kind: 'ok', ticket: updated } as const

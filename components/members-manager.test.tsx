@@ -101,4 +101,98 @@ describe('users management', () => {
       expect(screen.getByText('Alex Reed')).toBeInTheDocument(),
     )
   })
+
+  it('confirms deletion with the active assignment count, hides the user, and allows restore', async () => {
+    let state: 'active' | 'removed' = 'active'
+    let deletes = 0
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/api/v1/memberships/person-1') {
+          if (init?.method === 'DELETE') {
+            expect(JSON.parse(String(init.body))).toEqual({
+              expectedActiveTicketCount: 2,
+            })
+            deletes += 1
+            state = 'removed'
+            return { ok: true, json: async () => ({ data: { removed: true } }) }
+          }
+          if (init?.method === 'PATCH') {
+            state = 'active'
+            return { ok: true, json: async () => ({ data: {} }) }
+          }
+          return {
+            ok: true,
+            json: async () => ({
+              data: {
+                name: 'Taylor Kim',
+                username: 'taylor',
+                activeTicketCount: 2,
+              },
+            }),
+          }
+        }
+        const data =
+          url === '/api/v1/memberships'
+            ? [
+                {
+                  id: 'actor-1',
+                  name: 'Alex Morgan',
+                  username: 'alex',
+                  jobTitle: 'Manager',
+                  jobFunctionId: null,
+                  role: 'owner',
+                  state: 'active',
+                },
+                {
+                  id: 'person-1',
+                  name: 'Taylor Kim',
+                  username: 'taylor',
+                  jobTitle: 'Design',
+                  jobFunctionId: null,
+                  role: 'member',
+                  state,
+                },
+              ]
+            : url.includes('bootstrap')
+              ? {
+                  actor: {
+                    role: 'owner',
+                    membershipId: 'actor-1',
+                    localDemoUserCreation: true,
+                  },
+                }
+              : { taxonomy: [] }
+        return { ok: true, json: async () => ({ data }) }
+      }),
+    )
+    render(<MembersManager />)
+    await screen.findByText('Taylor Kim')
+    expect(screen.queryByLabelText('Actions for Alex Morgan')).toBeNull()
+    await userEvent.click(screen.getByLabelText('Actions for Taylor Kim'))
+    await userEvent.click(screen.getByRole('button', { name: 'Delete user' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Delete user' })
+    expect(within(dialog).getByText(/Taylor Kim/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/@taylor/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/2 active tickets/)).toBeInTheDocument()
+    expect(deletes).toBe(0)
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Cancel' }),
+    )
+    expect(deletes).toBe(0)
+    await userEvent.click(screen.getByRole('button', { name: 'Delete user' }))
+    await userEvent.click(
+      within(await screen.findByRole('dialog')).getByRole('button', {
+        name: 'Delete user',
+      }),
+    )
+    await waitFor(() => expect(deletes).toBe(1))
+    expect(screen.queryByLabelText('Actions for Taylor Kim')).toBeNull()
+    await userEvent.click(screen.getByText('Deleted users (1)'))
+    await userEvent.click(screen.getByRole('button', { name: 'Restore user' }))
+    expect(
+      await screen.findByLabelText('Actions for Taylor Kim'),
+    ).toBeInTheDocument()
+  })
 })

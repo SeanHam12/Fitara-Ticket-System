@@ -40,7 +40,8 @@ const ticket = {
   statusId: id(5),
   projectId: id(4),
   reporterMembershipId: id(3),
-  assigneeMembershipId: id(3),
+  assigneeMembershipIds: [id(3)],
+  githubUrl: null,
   position: 1000,
   blocked: false,
   dueDate: null,
@@ -52,6 +53,144 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 describe('workspace interaction', () => {
+  it('validates and saves a GitHub link while editing a ticket', async () => {
+    let patched: Record<string, unknown> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+          patched = JSON.parse(String(init.body))
+          return {
+            ok: true,
+            json: async () => ({
+              data: { ...ticket, githubUrl: patched?.githubUrl, activity: [] },
+            }),
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            data: url.includes('bootstrap')
+              ? boot
+              : url.endsWith(id(9))
+                ? { ...ticket, activity: [] }
+                : [ticket],
+          }),
+        }
+      }),
+    )
+    render(<WorkspaceApp />)
+    await screen.findByText('Your work, in focus.')
+    fireEvent.click(
+      screen.getByRole('button', { name: /FIT-1: Build the demo/ }),
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Edit ticket' }),
+    )
+    await userEvent.type(
+      screen.getByLabelText('GitHub link'),
+      'https://evil.test/a/b',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('valid GitHub')
+    expect(patched).toBeUndefined()
+    await userEvent.clear(screen.getByLabelText('GitHub link'))
+    await userEvent.type(
+      screen.getByLabelText('GitHub link'),
+      'https://github.com/fitara/work/issues/7',
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(patched?.githubUrl).toBe(
+        'https://github.com/fitara/work/issues/7',
+      ),
+    )
+    expect(
+      await screen.findByRole('link', {
+        name: 'https://github.com/fitara/work/issues/7',
+      }),
+    ).toHaveAttribute('rel', 'noopener noreferrer')
+  }, 15_000)
+  it('saves several assignees and reloads them after refresh', async () => {
+    const second = { id: id(2), name: 'Taylor Kim' }
+    let saved = { ...ticket, assigneeMembershipIds: [id(3)] }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+          const body = JSON.parse(String(init.body)) as {
+            assigneeMembershipIds: string[]
+          }
+          saved = {
+            ...saved,
+            assigneeMembershipIds: body.assigneeMembershipIds,
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            data: url.includes('bootstrap')
+              ? { ...boot, members: [...boot.members, second] }
+              : url.endsWith(id(9)) || init?.method === 'PATCH'
+                ? { ...saved, activity: [] }
+                : [saved],
+          }),
+        }
+      }),
+    )
+    const view = render(<WorkspaceApp />)
+    await screen.findByText('Your work, in focus.')
+    fireEvent.click(
+      screen.getByRole('button', { name: /FIT-1: Build the demo/ }),
+    )
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Edit ticket' }),
+    )
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Add another assignee' }),
+    )
+    await userEvent.selectOptions(
+      screen.getByLabelText('Choose existing assignee'),
+      id(2),
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
+    await waitFor(() =>
+      expect(saved.assigneeMembershipIds).toEqual([id(3), id(2)]),
+    )
+    view.unmount()
+    render(<WorkspaceApp />)
+    await screen.findByText('Your work, in focus.')
+    fireEvent.click(
+      screen.getByRole('button', { name: /FIT-1: Build the demo/ }),
+    )
+    expect(
+      await screen.findByText('Alex Morgan, Taylor Kim'),
+    ).toBeInTheDocument()
+  }, 15_000)
+  it('counts and filters a ticket for every assignee', async () => {
+    const second = { id: id(2), name: 'Taylor Kim' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => ({
+        ok: true,
+        json: async () => ({
+          data: url.includes('bootstrap')
+            ? { ...boot, members: [...boot.members, second] }
+            : [{ ...ticket, assigneeMembershipIds: [id(3), id(2)] }],
+        }),
+      })),
+    )
+    render(<WorkspaceApp />)
+    await screen.findByText('Your work, in focus.')
+    await userEvent.selectOptions(
+      screen.getByRole('combobox', { name: 'Assignee' }),
+      id(2),
+    )
+    expect(
+      screen.getByRole('button', { name: /FIT-1: Build the demo/ }),
+    ).toBeInTheDocument()
+    expect(screen.getByTitle('Alex Morgan, Taylor Kim')).toBeInTheDocument()
+  })
   it('switches board/list and opens a ticket drawer', async () => {
     vi.stubGlobal(
       'fetch',
@@ -133,21 +272,14 @@ describe('workspace interaction', () => {
     expect(
       screen.getByRole('heading', { name: 'Overview' }),
     ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Done when' })).toBeNull()
     expect(
-      screen.getByRole('heading', { name: 'Done when' }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(/completion tracking is not implemented/i),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('heading', { name: 'Work & blockers' }),
-    ).toBeInTheDocument()
+      screen.queryByRole('heading', { name: 'Work & blockers' }),
+    ).toBeNull()
     expect(
       screen.getByRole('heading', { name: 'Discussion & activity' }),
     ).toBeInTheDocument()
-    expect(
-      screen.getByRole('heading', { name: 'Resources' }),
-    ).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Resources' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /close drawer/i }))
     await userEvent.click(screen.getByRole('button', { name: /list/i }))
     expect(
@@ -216,16 +348,15 @@ describe('ticket creation from overview', () => {
     ).toBeInTheDocument()
   }, 15_000)
 
-  it('preserves the draft while adding a real assignee and selects the new person', async () => {
-    let created = false
+  it('adds existing assignees without creating a user and saves them', async () => {
     let ticketBody: Record<string, unknown> | undefined
-    const newPerson = { id: id(2), name: 'Taylor Kim', username: 'taylor' }
+    const second = { id: id(2), name: 'Taylor Kim' }
+    const third = { id: id(10), name: 'Morgan Lee' }
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
         if (url === '/api/v1/memberships' && init?.method === 'POST') {
-          created = true
-          return { ok: true, json: async () => ({ data: newPerson }) }
+          throw new Error('Assignee selection must not create users')
         }
         if (url === '/api/v1/tickets' && init?.method === 'POST') {
           ticketBody = JSON.parse(String(init.body))
@@ -235,7 +366,8 @@ describe('ticket creation from overview', () => {
               data: {
                 ...ticket,
                 title: ticketBody?.title,
-                assigneeMembershipId: id(2),
+                assigneeMembershipIds: [id(2), id(3)],
+                githubUrl: ticketBody?.githubUrl,
               },
             }),
           }
@@ -247,9 +379,7 @@ describe('ticket creation from overview', () => {
               ? {
                   ...boot,
                   actor: { ...boot.actor, localDemoUserCreation: true },
-                  members: created
-                    ? [...boot.members, newPerson]
-                    : boot.members,
+                  members: [...boot.members, second, third],
                 }
               : [ticket],
           }),
@@ -264,24 +394,47 @@ describe('ticket creation from overview', () => {
       within(drawer).getByLabelText('Title'),
       'Keep this draft',
     )
-    const add = within(drawer).getByRole('button', {
-      name: 'Add user beside Assignee',
-    })
-    await userEvent.click(add)
-    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(within(drawer).getByLabelText('Title')).toHaveValue(
-      'Keep this draft',
+    await userEvent.selectOptions(
+      within(drawer).getByLabelText('Assignee 1'),
+      id(3),
     )
-    await userEvent.click(add)
-    const form = screen.getByRole('dialog', { name: 'Add user for assignee' })
-    await userEvent.type(within(form).getByLabelText('Username'), 'taylor')
-    await userEvent.type(within(form).getByLabelText('Name'), 'Taylor Kim')
-    await userEvent.type(within(form).getByLabelText('Function'), 'Design')
     await userEvent.click(
-      within(form).getByRole('button', { name: 'Create user' }),
+      within(drawer).getByRole('button', { name: 'Add another assignee' }),
     )
-    await waitFor(() =>
-      expect(within(drawer).getByLabelText('Assignee')).toHaveValue(id(2)),
+    expect(
+      within(drawer).getByLabelText('Choose existing assignee'),
+    ).not.toHaveTextContent('Alex Morgan')
+    await userEvent.selectOptions(
+      within(drawer).getByLabelText('Choose existing assignee'),
+      id(2),
+    )
+    expect(within(drawer).getByLabelText('Assignee 2')).toHaveValue(id(2))
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Add another assignee' }),
+    )
+    await userEvent.selectOptions(
+      within(drawer).getByLabelText('Choose existing assignee'),
+      id(10),
+    )
+    expect(within(drawer).getByLabelText('Assignee 3')).toHaveValue(id(10))
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Remove Morgan Lee' }),
+    )
+    expect(within(drawer).queryByLabelText('Assignee 3')).toBeNull()
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Remove Alex Morgan' }),
+    )
+    expect(within(drawer).getByLabelText('Assignee 1')).toHaveValue(id(2))
+    await userEvent.click(
+      within(drawer).getByRole('button', { name: 'Add another assignee' }),
+    )
+    await userEvent.selectOptions(
+      within(drawer).getByLabelText('Choose existing assignee'),
+      id(3),
+    )
+    await userEvent.type(
+      within(drawer).getByLabelText('GitHub link'),
+      'https://github.com/fitara/work/pull/42',
     )
     expect(within(drawer).getByLabelText('Title')).toHaveValue(
       'Keep this draft',
@@ -292,11 +445,19 @@ describe('ticket creation from overview', () => {
     await userEvent.click(
       within(drawer).getByRole('button', { name: 'Create ticket' }),
     )
-    await waitFor(() => expect(ticketBody?.assigneeMembershipId).toBe(id(2)))
+    await waitFor(() =>
+      expect(ticketBody?.assigneeMembershipIds).toEqual([id(2), id(3)]),
+    )
+    expect(ticketBody?.githubUrl).toBe('https://github.com/fitara/work/pull/42')
+    const link = await screen.findByRole('link', {
+      name: 'https://github.com/fitara/work/pull/42',
+    })
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
     expect(ticketBody?.title).toBe('Keep this draft')
   }, 15_000)
 
-  it('hides user creation and deletion from a member', async () => {
+  it('keeps deletion restricted for a member while allowing existing assignees', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => ({
@@ -320,7 +481,42 @@ describe('ticket creation from overview', () => {
     expect(screen.queryByRole('button', { name: 'Delete tickets' })).toBeNull()
     await userEvent.click(screen.getByRole('button', { name: /New ticket/ }))
     expect(
-      screen.queryByRole('button', { name: 'Add user beside Assignee' }),
-    ).toBeNull()
+      screen.getByRole('button', { name: 'Add another assignee' }),
+    ).toBeInTheDocument()
+  })
+
+  it('can remove every assignee and submit an unassigned ticket', async () => {
+    let body: Record<string, unknown> | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/api/v1/tickets' && init?.method === 'POST') {
+          body = JSON.parse(String(init.body))
+          return {
+            ok: true,
+            json: async () => ({
+              data: { ...ticket, assigneeMembershipIds: [] },
+            }),
+          }
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            data: url.includes('bootstrap') ? boot : [ticket],
+          }),
+        }
+      }),
+    )
+    render(<WorkspaceApp />)
+    await screen.findByText('Your work, in focus.')
+    await userEvent.click(screen.getByRole('button', { name: /New ticket/ }))
+    await userEvent.type(screen.getByLabelText('Title'), 'Unassigned work')
+    await userEvent.selectOptions(screen.getByLabelText('Assignee 1'), id(3))
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Remove Alex Morgan' }),
+    )
+    expect(screen.getByLabelText('Assignee 1')).toHaveValue('')
+    await userEvent.click(screen.getByRole('button', { name: 'Create ticket' }))
+    await waitFor(() => expect(body?.assigneeMembershipIds).toEqual([]))
   })
 })

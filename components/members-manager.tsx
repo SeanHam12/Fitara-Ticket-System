@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react'
 import { AddUserForm } from './add-user-form'
 
 export type Member = {
@@ -40,9 +40,19 @@ export function MembersManager() {
   const [members, setMembers] = useState<Member[]>([])
   const [taxonomy, setTaxonomy] = useState<TaxonomyItem[]>([])
   const [actorRole, setActorRole] = useState<ActorRole>('admin')
+  const [actorMembershipId, setActorMembershipId] = useState('')
   const [localDemo, setLocalDemo] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<Member | null>(null)
+  const [deleteImpact, setDeleteImpact] = useState<{
+    name: string
+    username: string | null
+    activeTicketCount: number
+  } | null>(null)
+  const [deleteError, setDeleteError] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const cancelDeleteRef = useRef<HTMLButtonElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -50,12 +60,17 @@ export function MembersManager() {
       const [rows, boot, workspace] = await Promise.all([
         request<unknown>('/api/v1/memberships'),
         request<{
-          actor?: { role?: ActorRole; localDemoUserCreation?: boolean }
+          actor?: {
+            role?: ActorRole
+            membershipId?: string
+            localDemoUserCreation?: boolean
+          }
         }>('/api/v1/bootstrap'),
         request<{ taxonomy?: TaxonomyItem[] }>('/api/v1/workspace'),
       ])
       setMembers(normalizeMembers(rows))
       setActorRole(boot.actor?.role === 'owner' ? 'owner' : 'admin')
+      setActorMembershipId(boot.actor?.membershipId ?? '')
       setLocalDemo(boot.actor?.localDemoUserCreation === true)
       setTaxonomy(Array.isArray(workspace.taxonomy) ? workspace.taxonomy : [])
       setError('')
@@ -69,6 +84,47 @@ export function MembersManager() {
   useEffect(() => {
     void Promise.resolve().then(load)
   }, [load])
+
+  useEffect(() => {
+    if (deleteTarget) cancelDeleteRef.current?.focus()
+  }, [deleteTarget])
+
+  async function openDelete(member: Member) {
+    setDeleteTarget(member)
+    setDeleteImpact(null)
+    setDeleteError('')
+    try {
+      setDeleteImpact(await request(`/api/v1/memberships/${member.id}`))
+    } catch (cause) {
+      setDeleteError(
+        cause instanceof Error ? cause.message : 'Unable to check assignments',
+      )
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || !deleteImpact) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await request(`/api/v1/memberships/${deleteTarget.id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          expectedActiveTicketCount: deleteImpact.activeTicketCount,
+        }),
+      })
+      setDeleteTarget(null)
+      setDeleteImpact(null)
+      await load()
+    } catch (cause) {
+      setDeleteError(
+        cause instanceof Error ? cause.message : 'Unable to delete user',
+      )
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   async function update(
     member: Member,
@@ -98,6 +154,8 @@ export function MembersManager() {
   const activeCount = members.filter(
     (member) => member.state === 'active',
   ).length
+  const visibleMembers = members.filter((member) => member.state !== 'removed')
+  const deletedMembers = members.filter((member) => member.state === 'removed')
   return (
     <main className="admin-page users-page">
       <header>
@@ -134,13 +192,14 @@ export function MembersManager() {
           </header>
           {loading ? (
             <p role="status">Loading users…</p>
-          ) : !members.length ? (
+          ) : !visibleMembers.length ? (
             <p>No users are available.</p>
           ) : (
-            members.map((member) => {
+            visibleMembers.map((member) => {
               const canManage =
-                actorRole === 'owner' ||
-                !['owner', 'admin'].includes(member.role)
+                member.id !== actorMembershipId &&
+                (actorRole === 'owner' ||
+                  !['owner', 'admin'].includes(member.role))
               return (
                 <article className="user-row" key={member.id}>
                   <div className="user-identity">
@@ -239,6 +298,13 @@ export function MembersManager() {
                             Restore
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          className="danger-text"
+                          onClick={() => void openDelete(member)}
+                        >
+                          Delete user
+                        </button>
                       </div>
                     </details>
                   )}
@@ -246,8 +312,91 @@ export function MembersManager() {
               )
             })
           )}
+          {!loading && deletedMembers.length > 0 && (
+            <details className="deleted-users">
+              <summary>Deleted users ({deletedMembers.length})</summary>
+              {deletedMembers.map((member) => (
+                <div className="deleted-user-row" key={member.id}>
+                  <span>
+                    {member.name}
+                    {member.username && ` (@${member.username})`}
+                  </span>
+                  {(actorRole === 'owner' ||
+                    !['owner', 'admin'].includes(member.role)) && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void update(
+                          member,
+                          { state: 'active' },
+                          `Restore ${member.name} to this workspace? Active ticket assignments will not be restored.`,
+                        )
+                      }
+                    >
+                      Restore user
+                    </button>
+                  )}
+                </div>
+              ))}
+            </details>
+          )}
         </section>
       </div>
+      {deleteTarget && (
+        <div className="confirmation-backdrop">
+          <section
+            className="confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-user-title"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !deleting) setDeleteTarget(null)
+            }}
+          >
+            <h2 id="delete-user-title">Delete user</h2>
+            <p>
+              Delete <strong>{deleteImpact?.name ?? deleteTarget.name}</strong>{' '}
+              (
+              {(deleteImpact?.username ?? deleteTarget.username)
+                ? `@${deleteImpact?.username ?? deleteTarget.username}`
+                : 'username not set'}
+              ) from this workspace?
+            </p>
+            {deleteImpact ? (
+              <p>
+                {deleteImpact.activeTicketCount} active{' '}
+                {deleteImpact.activeTicketCount === 1
+                  ? 'ticket is'
+                  : 'tickets are'}{' '}
+                assigned to this person. They will be unassigned from those
+                tickets. Other assignees will remain.
+              </p>
+            ) : !deleteError ? (
+              <p role="status">Checking active ticket assignments…</p>
+            ) : null}
+            <p>Historical activity and archived ticket attribution are kept.</p>
+            {deleteError && <p role="alert">{deleteError}</p>}
+            <div className="confirmation-actions">
+              <button
+                ref={cancelDeleteRef}
+                type="button"
+                disabled={deleting}
+                onClick={() => setDeleteTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="delete-confirm"
+                disabled={!deleteImpact || deleting}
+                onClick={() => void confirmDelete()}
+              >
+                {deleting ? 'Deleting…' : 'Delete user'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

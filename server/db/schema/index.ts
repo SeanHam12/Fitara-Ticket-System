@@ -1,6 +1,7 @@
 import {
   boolean,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -301,6 +302,35 @@ export const labels = pgTable(
       .notNull(),
   },
   (t) => [unique().on(t.workspaceId, t.name), unique().on(t.workspaceId, t.id)],
+)
+
+export const ticketAssignees = pgTable(
+  'ticket_assignees',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id),
+    ticketId: uuid('ticket_id')
+      .notNull()
+      .references(() => tickets.id),
+    membershipId: uuid('membership_id')
+      .notNull()
+      .references(() => memberships.id),
+    position: integer('position').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.ticketId, t.membershipId] }),
+    foreignKey({
+      columns: [t.workspaceId, t.ticketId],
+      foreignColumns: [tickets.workspaceId, tickets.id],
+    }),
+    foreignKey({
+      columns: [t.workspaceId, t.membershipId],
+      foreignColumns: [memberships.workspaceId, memberships.id],
+    }),
+    unique().on(t.ticketId, t.position),
+    index('ticket_assignees_member_idx').on(t.workspaceId, t.membershipId),
+  ],
 )
 
 export const ticketLabels = pgTable(

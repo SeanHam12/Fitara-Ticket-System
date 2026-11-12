@@ -34,7 +34,7 @@ describe.skipIf(!enabled)('PostgreSQL ticket invariants', () => {
       type: 'task' as const,
       priority: 'p3' as const,
       statusId: status.id,
-      assigneeMembershipId: null,
+      assigneeMembershipIds: [],
       labelIds: [],
       dueDate: null,
     }

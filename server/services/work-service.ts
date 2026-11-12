@@ -64,6 +64,11 @@ export class WorkService {
         ? { ...body, statusId: await this.repo.defaultStatusId(actor) }
         : body
     const input = createTicketSchema.parse(payload)
+    if (
+      actor.role === 'member' &&
+      input.assigneeMembershipIds.some((id) => id !== actor.membershipId)
+    )
+      throw forbidden('Members may assign new tickets only to themselves.')
     const ticket = await this.repo.createTicket(actor, input)
     if (!ticket)
       throw notFound('A selected project, status, or assignee is unavailable.')
@@ -74,24 +79,31 @@ export class WorkService {
     if (
       typeof body === 'object' &&
       body !== null &&
-      'assigneeMembershipId' in body
+      'assigneeMembershipIds' in body
     )
       requireCapability(actor, 'ticket.assign')
     if (
       actor.role === 'member' &&
       typeof body === 'object' &&
       body !== null &&
-      'assigneeMembershipId' in body
+      'assigneeMembershipIds' in body
     ) {
       const current = await this.repo.getTicket(actor, id)
       if (!current) throw notFound('Ticket not found.')
-      const next = body.assigneeMembershipId
+      const next = body.assigneeMembershipIds
+      const others = current.assigneeMembershipIds.filter(
+        (id) => id !== actor.membershipId,
+      )
       const allowed =
-        (current.assigneeMembershipId === null &&
-          next === actor.membershipId) ||
-        (current.assigneeMembershipId === actor.membershipId &&
-          next === null) ||
-        current.assigneeMembershipId === next
+        Array.isArray(next) &&
+        others.length ===
+          next.filter((id) => id !== actor.membershipId).length &&
+        others.every((id) => next.includes(id)) &&
+        !(
+          others.length &&
+          !current.assigneeMembershipIds.includes(actor.membershipId) &&
+          next.includes(actor.membershipId)
+        )
       if (!allowed)
         throw forbidden(
           'Members may only claim unassigned work or unassign themselves.',

@@ -15,7 +15,7 @@ describe('ticket request validation', () => {
         type: 'task',
         priority: 'p2',
         statusId: id,
-        assigneeMembershipId: null,
+        assigneeMembershipIds: [],
         labelIds: [],
         dueDate: null,
       }).title,
@@ -37,5 +37,34 @@ describe('ticket request validation', () => {
     expect(() =>
       moveTicketSchema.parse({ expectedVersion: 0, statusId: id }),
     ).toThrow()
+  })
+  it('validates multiple unique assignees and safe GitHub URLs', () => {
+    const base = {
+      projectId: id,
+      title: 'Work',
+      type: 'task',
+      priority: 'p3',
+      statusId: id,
+    }
+    expect(
+      createTicketSchema.parse({
+        ...base,
+        assigneeMembershipIds: [id],
+        githubUrl: 'https://github.com/fitara/work/issues/12',
+      }).assigneeMembershipIds,
+    ).toEqual([id])
+    expect(() =>
+      createTicketSchema.parse({ ...base, assigneeMembershipIds: [id, id] }),
+    ).toThrow()
+    for (const githubUrl of [
+      'javascript:alert(1)',
+      'https://github.com.evil.test/a/b',
+      'https://github.com/a/b?token=x',
+      'http://github.com/a/b',
+    ])
+      expect(() => createTicketSchema.parse({ ...base, githubUrl })).toThrow()
+    expect(
+      createTicketSchema.parse({ ...base, githubUrl: '' }).githubUrl,
+    ).toBeNull()
   })
 })

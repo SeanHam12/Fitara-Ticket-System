@@ -8,6 +8,7 @@ import {
   memberships,
   projects,
   statuses,
+  ticketAssignees,
   ticketLabels,
   ticketSequences,
   tickets,
@@ -781,7 +782,6 @@ async function main() {
       priority: seed.priority,
       statusId: ids.statuses[seed.status],
       reporterMembershipId: ids.members[i % ids.members.length],
-      assigneeMembershipId: ids.members[seed.assignee],
       position: positions[seed.status],
       blocked: seed.blocked ?? false,
       ...details,
@@ -814,6 +814,15 @@ async function main() {
         metadata: { seeded: true, teamDataset: true },
       })
     }
+    await db
+      .insert(ticketAssignees)
+      .values({
+        workspaceId: ids.workspace,
+        ticketId,
+        membershipId: ids.members[seed.assignee],
+        position: 0,
+      })
+      .onConflictDoNothing()
     await db.delete(ticketLabels).where(eq(ticketLabels.ticketId, ticketId))
     await db.insert(ticketLabels).values({
       workspaceId: ids.workspace,
