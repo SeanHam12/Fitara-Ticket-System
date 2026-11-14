@@ -271,6 +271,24 @@ describe('workspace interaction', () => {
     expect(
       JSON.parse(localStorage.getItem('fitara-theme') ?? '{}'),
     ).toMatchObject({ box: '#223344' })
+    const behindBoxes = screen.getByLabelText('Behind boxes')
+    fireEvent.change(behindBoxes, { target: { value: '#112233' } })
+    expect(document.documentElement.style.getPropertyValue('--board')).toBe(
+      '#112233',
+    )
+    expect(
+      screen.getByRole('group', { name: 'Set total theme colors' }),
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Midnight' }))
+    expect(document.documentElement.style.getPropertyValue('--bg')).toBe(
+      '#263761',
+    )
+    expect(document.documentElement.style.getPropertyValue('--surface')).toBe(
+      '#171e28',
+    )
+    expect(document.documentElement.style.getPropertyValue('--board')).toBe(
+      '#101720',
+    )
     await userEvent.click(screen.getByRole('button', { name: 'Reset colors' }))
     expect(screen.getByLabelText('Move FIT-1')).toBeEnabled()
     fireEvent.click(

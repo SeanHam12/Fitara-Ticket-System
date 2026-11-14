@@ -94,12 +94,63 @@ const scopeCopy: Record<TicketScope, { label: string; description: string }> = {
     description: 'Blocked tickets that need attention.',
   },
 }
-const defaultTheme = {
+type Theme = {
+  primary: string
+  secondary: string
+  background: string
+  box: string
+  boxBackground: string
+}
+const defaultTheme: Theme = {
   primary: '#6957e8',
   secondary: '#101823',
   background: '#f7f8fb',
   box: '#ffffff',
+  boxBackground: '#f7f8fa',
 }
+const themePresets: { name: string; colors: Theme }[] = [
+  { name: 'Default', colors: defaultTheme },
+  {
+    name: 'Midnight',
+    colors: {
+      primary: '#7c6cf2',
+      secondary: '#0c1118',
+      background: '#263761',
+      box: '#171e28',
+      boxBackground: '#101720',
+    },
+  },
+  {
+    name: 'Ocean',
+    colors: {
+      primary: '#2586d9',
+      secondary: '#0b2942',
+      background: '#dceefa',
+      box: '#f7fcff',
+      boxBackground: '#c9e4f5',
+    },
+  },
+  {
+    name: 'Forest',
+    colors: {
+      primary: '#3f8a65',
+      secondary: '#153126',
+      background: '#e3efe7',
+      box: '#f8fcf9',
+      boxBackground: '#d5e6db',
+    },
+  },
+  {
+    name: 'Sunset',
+    colors: {
+      primary: '#d76b4a',
+      secondary: '#48251f',
+      background: '#f7e3d7',
+      box: '#fffaf6',
+      boxBackground: '#f1d1c1',
+    },
+  },
+]
 const ticketDetailFields = [
   { key: 'acceptanceCriteria', label: 'Acceptance criteria' },
   { key: 'comments', label: 'Comments' },
@@ -603,12 +654,14 @@ function ThemeControls() {
       const saved = JSON.parse(localStorage.getItem('fitara-theme') ?? 'null')
       const background = saved?.background ?? defaultTheme.background
       const box = saved?.box ?? defaultTheme.box
+      const boxBackground = saved?.boxBackground ?? defaultTheme.boxBackground
       if (
         saved &&
         /^#[0-9a-f]{6}$/i.test(saved.primary) &&
         /^#[0-9a-f]{6}$/i.test(saved.secondary) &&
         /^#[0-9a-f]{6}$/i.test(background) &&
-        /^#[0-9a-f]{6}$/i.test(box)
+        /^#[0-9a-f]{6}$/i.test(box) &&
+        /^#[0-9a-f]{6}$/i.test(boxBackground)
       ) {
         const timer = setTimeout(
           () =>
@@ -617,6 +670,7 @@ function ThemeControls() {
               secondary: saved.secondary,
               background,
               box,
+              boxBackground,
             }),
           0,
         )
@@ -632,6 +686,7 @@ function ThemeControls() {
     document.documentElement.style.setProperty('--secondary', next.secondary)
     document.documentElement.style.setProperty('--bg', next.background)
     document.documentElement.style.setProperty('--surface', next.box)
+    document.documentElement.style.setProperty('--board', next.boxBackground)
   }, [])
 
   useEffect(() => {
@@ -640,6 +695,11 @@ function ThemeControls() {
 
   const update = (key: keyof typeof defaultTheme, value: string) => {
     const next = { ...theme, [key]: value }
+    setTheme(next)
+    localStorage.setItem('fitara-theme', JSON.stringify(next))
+  }
+
+  const applyPreset = (next: Theme) => {
     setTheme(next)
     localStorage.setItem('fitara-theme', JSON.stringify(next))
   }
@@ -695,6 +755,43 @@ function ThemeControls() {
               onChange={(event) => update('box', event.target.value)}
             />
           </label>
+          <label>
+            <span>Behind boxes</span>
+            <input
+              type="color"
+              value={theme.boxBackground}
+              onChange={(event) => update('boxBackground', event.target.value)}
+            />
+          </label>
+          <div className="theme-presets">
+            <span>Set total theme colors</span>
+            <div role="group" aria-label="Set total theme colors">
+              {themePresets.map((preset) => {
+                const selected = Object.entries(preset.colors).every(
+                  ([key, value]) => theme[key as keyof Theme] === value,
+                )
+                return (
+                  <button
+                    className={selected ? 'selected' : undefined}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => applyPreset(preset.colors)}
+                    key={preset.name}
+                  >
+                    <span aria-hidden className="theme-swatches">
+                      {Object.values(preset.colors).map((color, index) => (
+                        <i
+                          style={{ backgroundColor: color }}
+                          key={`${color}-${index}`}
+                        />
+                      ))}
+                    </span>
+                    <span>{preset.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
           <button className="theme-reset" type="button" onClick={reset}>
             Reset colors
           </button>
