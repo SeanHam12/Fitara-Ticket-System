@@ -262,6 +262,16 @@ describe('workspace interaction', () => {
     expect(screen.getByLabelText('Primary color')).toBeInTheDocument()
     expect(screen.getByLabelText('Secondary color')).toBeInTheDocument()
     expect(screen.getByLabelText('Background color')).toBeInTheDocument()
+    const boxColor = screen.getByLabelText('Box colors')
+    expect(boxColor).toBeInTheDocument()
+    fireEvent.change(boxColor, { target: { value: '#223344' } })
+    expect(document.documentElement.style.getPropertyValue('--surface')).toBe(
+      '#223344',
+    )
+    expect(
+      JSON.parse(localStorage.getItem('fitara-theme') ?? '{}'),
+    ).toMatchObject({ box: '#223344' })
+    await userEvent.click(screen.getByRole('button', { name: 'Reset colors' }))
     expect(screen.getByLabelText('Move FIT-1')).toBeEnabled()
     fireEvent.click(
       screen.getByRole('button', {

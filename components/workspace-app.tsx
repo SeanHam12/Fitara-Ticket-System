@@ -98,6 +98,7 @@ const defaultTheme = {
   primary: '#6957e8',
   secondary: '#101823',
   background: '#f7f8fb',
+  box: '#ffffff',
 }
 const ticketDetailFields = [
   { key: 'acceptanceCriteria', label: 'Acceptance criteria' },
@@ -601,13 +602,24 @@ function ThemeControls() {
     try {
       const saved = JSON.parse(localStorage.getItem('fitara-theme') ?? 'null')
       const background = saved?.background ?? defaultTheme.background
+      const box = saved?.box ?? defaultTheme.box
       if (
         saved &&
         /^#[0-9a-f]{6}$/i.test(saved.primary) &&
         /^#[0-9a-f]{6}$/i.test(saved.secondary) &&
-        /^#[0-9a-f]{6}$/i.test(background)
+        /^#[0-9a-f]{6}$/i.test(background) &&
+        /^#[0-9a-f]{6}$/i.test(box)
       ) {
-        const timer = setTimeout(() => setTheme({ ...saved, background }), 0)
+        const timer = setTimeout(
+          () =>
+            setTheme({
+              primary: saved.primary,
+              secondary: saved.secondary,
+              background,
+              box,
+            }),
+          0,
+        )
         return () => clearTimeout(timer)
       }
     } catch {
@@ -619,6 +631,7 @@ function ThemeControls() {
     document.documentElement.style.setProperty('--primary', next.primary)
     document.documentElement.style.setProperty('--secondary', next.secondary)
     document.documentElement.style.setProperty('--bg', next.background)
+    document.documentElement.style.setProperty('--surface', next.box)
   }, [])
 
   useEffect(() => {
@@ -672,6 +685,14 @@ function ThemeControls() {
               type="color"
               value={theme.background}
               onChange={(event) => update('background', event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Box colors</span>
+            <input
+              type="color"
+              value={theme.box}
+              onChange={(event) => update('box', event.target.value)}
             />
           </label>
           <button className="theme-reset" type="button" onClick={reset}>

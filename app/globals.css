@@ -452,7 +452,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 14px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 20px;
@@ -502,7 +502,7 @@ textarea {
   max-width: 270px;
   padding: 14px;
   border-radius: 10px;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--purple);
   box-shadow: var(--shadow);
 }
@@ -1084,7 +1084,7 @@ textarea:focus-visible,
   font-size: 12px;
 }
 .segmented .selected {
-  background: white;
+  background: var(--surface);
   color: var(--text);
   border-radius: 6px;
   box-shadow: 0 1px 5px #0002;
@@ -1178,7 +1178,7 @@ textarea:focus-visible,
 }
 .ticket-card {
   position: relative;
-  background: white;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 9px;
   margin-bottom: 9px;
@@ -1271,7 +1271,7 @@ textarea:focus-visible,
   font-size: 9px;
   border: 0;
   color: #737c88;
-  background: white;
+  background: var(--surface);
 }
 .table-wrap {
   overflow: auto;
@@ -1485,7 +1485,7 @@ fieldset {
 }
 .detail-heading button {
   border: 1px solid var(--border);
-  background: white;
+  background: var(--surface);
   border-radius: 7px;
   padding: 7px 10px;
 }
@@ -1510,7 +1510,7 @@ fieldset {
   margin: 25px 0;
 }
 .properties div {
-  background: white;
+  background: var(--surface);
   padding: 11px;
 }
 .properties dt {
